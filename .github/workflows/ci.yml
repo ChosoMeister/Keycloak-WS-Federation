@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -23,11 +23,11 @@ jobs:
         run: mvn --batch-mode --no-transfer-progress clean verify
       - name: Verify provider contents
         run: |
-          jar tf keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar > jar-contents.txt
+          jar tf keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar > jar-contents.txt
           grep -q 'META-INF/services/org.keycloak.protocol.LoginProtocolFactory' jar-contents.txt
           grep -q 'io/github/chosomeister/keycloak/protocol/wsfed/WSFedLoginProtocol.class' jar-contents.txt
           ! grep -q '^theme/' jar-contents.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: keycloak-wsfed
           path: keycloak-wsfed/target/keycloak-wsfed-*.jar
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Validate examples and scripts
         run: |
           jq --exit-status . examples/realm-wsfed-idp.json >/dev/null

@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp clean verify
 FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION} AS keycloak-builder
 ENV KC_HEALTH_ENABLED=true
 COPY --from=extension-builder \
-    /workspace/keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar \
+    /workspace/keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar \
     /opt/keycloak/providers/keycloak-wsfed.jar
 RUN /opt/keycloak/bin/kc.sh build --db=postgres
 

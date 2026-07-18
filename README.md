@@ -110,15 +110,17 @@ docker run --rm \
 The self-contained provider is generated at:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
 ```
+
+Prebuilt release artifacts and `SHA256SUMS` are published on the [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) page. Verify the checksum before installing a downloaded JAR.
 
 ### Installation
 
 Copy the provider JAR into the Quarkus provider directory and rebuild Keycloak:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -467,10 +469,10 @@ The following checks were performed on 2026-07-18 using the official `quay.io/ke
 | Standard `wsignin1.0` request | HTTP 200 login page and authentication session created |
 | Runtime `ERROR`, `FATAL`, or exception entries | None observed |
 
-The tested snapshot JAR was 671 KiB and had this SHA-256 digest:
+The tested `26.7.0-1` release JAR was 671 KiB and had this SHA-256 digest:
 
 ```text
-a34d1156fffded042484a45e6164b9b500382503b262e94d4a0a8670e9776de5
+9b5b1e4aea591f7b067f2f6a7610aaa0edc3c9736cd5717e69faed4086a9cbc8
 ```
 
 #### Startup and metadata measurements
@@ -501,7 +503,7 @@ CI additionally runs `scripts/integration-test.sh`, which executes both configur
 
 ### License and attribution
 
-This maintained implementation is distributed primarily under Apache License 2.0. It contains adapted code from earlier open-source WS-Federation implementations, and individual files may retain their original copyright and license headers, including LGPL-2.1-or-later material. Those file-level terms are not replaced by the repository's primary license.
+The repository-level distribution license is GNU Affero General Public License 3.0. The project contains adapted code from earlier open-source WS-Federation implementations, and individual files retain applicable original copyright and license notices, including Apache-2.0 and LGPL notices. Review [NOTICE](NOTICE) and the relevant source headers before redistribution; the repository license does not erase file-level attribution or license obligations.
 
 See [LICENSE](LICENSE) and [NOTICE](NOTICE) for license and attribution details. The maintained Java namespace is `io.github.chosomeister.keycloak`.
 
@@ -613,15 +615,17 @@ docker run --rm \
 فایل مستقل Provider در مسیر زیر ساخته می‌شود:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
 ```
+
+فایل JAR آماده و `SHA256SUMS` در صفحه [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) منتشر می‌شوند. پیش از نصب JAR دانلودشده، checksum آن را بررسی کنید.
 
 ### نصب
 
 فایل JAR را داخل پوشه Providerهای توزیع Quarkus کپی و Keycloak را مجدداً Build کنید:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -970,10 +974,10 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | درخواست استاندارد `wsignin1.0` | نمایش صفحه ورود با HTTP 200 و ساخت Authentication Session |
 | خطای Runtime از نوع `ERROR`، `FATAL` یا Exception | مشاهده نشد |
 
-حجم فایل JAR آزمایش‌شده 671 KiB و SHA-256 آن به‌شکل زیر بود:
+حجم فایل JAR آزمایش‌شده نسخه Release برابر `26.7.0-1` معادل 671 KiB و SHA-256 آن به‌شکل زیر بود:
 
 ```text
-a34d1156fffded042484a45e6164b9b500382503b262e94d4a0a8670e9776de5
+9b5b1e4aea591f7b067f2f6a7610aaa0edc3c9736cd5717e69faed4086a9cbc8
 ```
 
 #### اندازه‌گیری Startup و Metadata
@@ -1004,6 +1008,6 @@ Smoke Test فعلی، شناسایی Provider، Startup سرویس Keycloak، پ
 
 ### مجوز و Attribution
 
-این پیاده‌سازی نگه‌داری‌شده عمدتاً تحت Apache License 2.0 منتشر می‌شود. پروژه شامل کدهای سازگارشده از پیاده‌سازی‌های متن‌باز قدیمی WS-Federation است و بعضی فایل‌ها هدر copyright و مجوز اصلی خود، از جمله LGPL-2.1-or-later، را حفظ می‌کنند. مجوز اصلی مخزن جایگزین شرایط اختصاصی درج‌شده در آن فایل‌ها نمی‌شود.
+مجوز انتشار در سطح مخزن GNU Affero General Public License 3.0 است. پروژه شامل کدهای سازگارشده از پیاده‌سازی‌های متن‌باز قدیمی WS-Federation است و فایل‌ها اعلان‌های copyright و مجوز اصلی مرتبط، از جمله Apache-2.0 و LGPL، را حفظ می‌کنند. پیش از بازتوزیع، فایل [NOTICE](NOTICE) و header فایل‌های مربوط را بررسی کنید؛ مجوز سطح مخزن، الزام‌های attribution یا مجوزهای درج‌شده در فایل‌ها را حذف نمی‌کند.
 
 جزئیات مجوز و attribution در فایل‌های [LICENSE](LICENSE) و [NOTICE](NOTICE) قرار دارد. namespace نگه‌داری‌شده Java برابر `io.github.chosomeister.keycloak` است.

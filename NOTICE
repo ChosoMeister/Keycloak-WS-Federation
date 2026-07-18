@@ -11,11 +11,14 @@ from Dell, Inc., Red Hat, Inc. and its affiliates, Analytical Graphics, Inc.
 and/or its affiliates, and individual contributors. Applicable notices and
 license headers are retained in the relevant source files.
 
-Most of this distribution is provided under the Apache License, Version 2.0,
-included in the LICENSE file. Individual files with different license headers
-remain governed by those terms. In particular, WSTrustResponseWriter.java
-contains material licensed under the GNU Lesser General Public License,
-version 2.1 or any later version, as stated in that file.
+The repository-level distribution license is the GNU Affero General Public
+License, Version 3.0, included in the LICENSE file. Individual source files
+retain their original copyright and license notices where applicable. Those
+include files under the Apache License, Version 2.0, and the files
+WSTrustResponseWriter.java and WSTRequestSecurityTokenResponseParser.java,
+which contain material carrying GNU Lesser General Public License notices as
+stated in their headers. Downstream users and redistributors must comply with
+all notices applicable to the code they use.
 
 Keycloak is a trademark of Red Hat, Inc. This project is an independent
 extension and is not endorsed by or affiliated with Red Hat, Inc.

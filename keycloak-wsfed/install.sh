@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KEYCLOAK_HOME="${1:-}"
 ACTION="${2:-install}"
-ARTIFACT="${SCRIPT_DIR}/target/keycloak-wsfed-26.7.0-SNAPSHOT.jar"
+ARTIFACT="${SCRIPT_DIR}/target/keycloak-wsfed-26.7.0-1.jar"
 
 usage() {
   echo "Usage: $0 <keycloak-home> [install|uninstall]" >&2
