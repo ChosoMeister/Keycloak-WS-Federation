@@ -1,0 +1,21 @@
+Keycloak WS-Federation Extension
+Copyright 2026 Mustafa Tayefi
+
+This product is a substantially modified and modernized derivative of earlier
+open-source Keycloak WS-Federation work published at:
+
+    https://github.com/cloudtrust/keycloak-wsfed
+
+That earlier work includes contributions and code carrying copyright notices
+from Dell, Inc., Red Hat, Inc. and its affiliates, Analytical Graphics, Inc.
+and/or its affiliates, and individual contributors. Applicable notices and
+license headers are retained in the relevant source files.
+
+Most of this distribution is provided under the Apache License, Version 2.0,
+included in the LICENSE file. Individual files with different license headers
+remain governed by those terms. In particular, WSTrustResponseWriter.java
+contains material licensed under the GNU Lesser General Public License,
+version 2.1 or any later version, as stated in that file.
+
+Keycloak is a trademark of Red Hat, Inc. This project is an independent
+extension and is not endorsed by or affiliated with Red Hat, Inc.

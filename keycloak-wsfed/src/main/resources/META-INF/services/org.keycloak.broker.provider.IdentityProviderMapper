@@ -1,0 +1,2 @@
+io.github.chosomeister.keycloak.broker.wsfed.mappers.AttributeToRoleMapper
+io.github.chosomeister.keycloak.broker.wsfed.mappers.UserAttributeMapper
