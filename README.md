@@ -154,6 +154,123 @@ ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 
 Start it using the normal Keycloak production options for your database, hostname, TLS, proxy, cache, and observability configuration.
 
+### Adding the extension to an existing production Keycloak
+
+Use this runbook when Keycloak is already installed and serving traffic. Do not test a new provider for the first time on the only production instance.
+
+#### 1. Pre-deployment checks
+
+1. Confirm the running version with `/opt/keycloak/bin/kc.sh --version`. This release supports **Keycloak 26.7.x only**; do not install it on another minor version.
+2. Build the JAR with `mvn clean verify`, or download the JAR artifact produced by this repository's successful CI run. Record its SHA-256 with `sha256sum keycloak-wsfed.jar`.
+3. Back up the Keycloak database and current realm export/configuration according to your recovery procedure. The provider does not intentionally migrate the database, but the later client and broker configuration changes are stored there.
+4. Record the current Keycloak image tag, startup command, build-time options, environment, mounted files, and the existing contents of `providers/`.
+5. Test the same Keycloak build, database type, proxy/hostname settings, and representative realm configuration in staging.
+
+Provider JARs are trusted server code with the permissions of the Keycloak process. Install only an artifact you built or verified. See Keycloak's official [provider configuration](https://www.keycloak.org/server/configuration-provider) documentation.
+
+#### 2A. Direct ZIP/package installation
+
+The following example assumes Keycloak is installed at `/opt/keycloak` and managed by a systemd unit named `keycloak`. Adjust the path, service account, service name, and **build-time options** to match the existing deployment.
+
+```bash
+# Copy the tested artifact to the server before entering the maintenance window.
+sha256sum /tmp/keycloak-wsfed.jar
+
+# Stop traffic to this node, then stop Keycloak.
+sudo systemctl stop keycloak
+
+# Preserve the currently deployed extension when this is an upgrade.
+if sudo test -f /opt/keycloak/providers/keycloak-wsfed.jar; then
+  sudo cp -p /opt/keycloak/providers/keycloak-wsfed.jar \
+    /opt/keycloak/providers/keycloak-wsfed.jar.before-upgrade
+fi
+
+sudo install -o keycloak -g keycloak -m 0644 \
+  /tmp/keycloak-wsfed.jar \
+  /opt/keycloak/providers/keycloak-wsfed.jar
+
+# Reuse every build-time option from the current installation.
+sudo -u keycloak /opt/keycloak/bin/kc.sh build --db=postgres
+
+sudo systemctl start keycloak
+sudo systemctl status keycloak --no-pager
+curl --fail --silent --show-error http://127.0.0.1:9000/health/ready
+```
+
+`--db=postgres` above is only an example. Omitting or changing an existing build-time option can produce a server different from the currently approved build. After a successful build, keep the existing production startup command; optimized deployments should continue to use `start --optimized`.
+
+For a multi-node installation, remove one node from the load balancer, update and validate it, return it to service, and then continue one node at a time. All active nodes should run the same Keycloak and extension versions. Do not replace the provider simultaneously on every node.
+
+#### 2B. Existing Docker or Podman deployment
+
+Do not use `docker cp` or modify a running container. Build a new immutable image from the exact Keycloak version already approved in production:
+
+```dockerfile
+FROM quay.io/keycloak/keycloak:26.7.0 AS builder
+
+COPY --chown=keycloak:keycloak --chmod=0644 \
+  keycloak-wsfed.jar /opt/keycloak/providers/keycloak-wsfed.jar
+RUN /opt/keycloak/bin/kc.sh build --db=postgres
+
+FROM quay.io/keycloak/keycloak:26.7.0
+COPY --from=builder /opt/keycloak/ /opt/keycloak/
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+```
+
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-1`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+
+#### 2C. Existing Kubernetes deployment
+
+Use the immutable image produced in the previous step; do not mount or inject the provider JAR into running Pods. For a regular Kubernetes Deployment:
+
+```bash
+kubectl -n identity set image deployment/keycloak \
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-1
+
+kubectl -n identity rollout status deployment/keycloak --timeout=10m
+kubectl -n identity get pods
+```
+
+Preserve the existing readiness/liveness probes and use a rolling strategy that keeps a validated instance available. Confirm that Pod restarts remain at zero after the rollout.
+
+With the Keycloak Operator, set the custom image in the Keycloak custom resource and keep the Operator version aligned with the Keycloak image version:
+
+```yaml
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  image: registry.example.com/keycloak-wsfed:26.7.0-1
+  startOptimized: true
+```
+
+Keep the resource's existing `instances`, hostname, TLS, database, scheduling, and secret configuration; the snippet shows only the fields relevant to the custom image. See the official [custom Keycloak image](https://www.keycloak.org/operator/customizing-keycloak) guide.
+
+#### 3. Post-deployment validation
+
+Do not configure a production relying party until all checks pass:
+
+1. Readiness is healthy on every node: `/health/ready` on the management port, normally `9000`.
+2. Startup logs contain no provider loading error, linkage error, `ClassNotFoundException`, or `NoSuchMethodError`.
+3. **Identity Providers → Add provider** contains `WS-Fed`.
+4. A test realm/client returns HTTP 200 and XML from `/realms/{realm}/protocol/wsfed/descriptor`.
+5. A controlled `wsignin1.0` request reaches the login flow and preserves the expected `wtrealm`, `wreply`, and `wctx`.
+6. Existing OIDC and SAML smoke tests, login, logout, database connectivity, cluster discovery, metrics, and memory/startup baselines remain healthy.
+
+Only then apply the client or broker configuration described below. Start with one non-critical relying party and keep signature validation enabled.
+
+#### 4. Rollback
+
+If validation fails, stop routing traffic to the affected instance. For containers or Kubernetes, redeploy the previously recorded immutable image tag. A regular Deployment can be reverted with:
+
+```bash
+kubectl -n identity rollout undo deployment/keycloak
+kubectl -n identity rollout status deployment/keycloak --timeout=10m
+```
+
+For a direct installation, stop Keycloak, remove the new JAR, restore `keycloak-wsfed.jar.before-upgrade` when one existed, run `kc.sh build` again with the original build-time options, and restart the service. If client or broker configuration was already changed, restore those records or the database/realm backup separately. Removing the JAR does not remove configuration stored in the database.
+
 ### Configuration
 
 #### What appears in the Admin Console?
@@ -539,6 +656,123 @@ ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
 برای اجرای نهایی، تنظیمات استاندارد محیط Production شامل دیتابیس، hostname، TLS، پراکسی، cache و observability را مطابق معماری خود اعمال کنید.
+
+### افزودن افزونه به Keycloak عملیاتی موجود
+
+این Runbook برای زمانی است که Keycloak از قبل نصب شده و در حال سرویس‌دهی است. افزونه جدید را برای اولین بار روی تنها instance محیط Production آزمایش نکنید.
+
+#### ۱. بررسی‌های پیش از انتشار
+
+1. نسخه در حال اجرا را با `/opt/keycloak/bin/kc.sh --version` بررسی کنید. این نسخه افزونه فقط از **Keycloak 26.7.x** پشتیبانی می‌کند و نباید روی minor version دیگری نصب شود.
+2. فایل JAR را با `mvn clean verify` بسازید یا artifact مربوط به اجرای موفق CI همین مخزن را دریافت کنید. مقدار SHA-256 را با `sha256sum keycloak-wsfed.jar` ثبت کنید.
+3. طبق Runbook بازیابی سازمان، از دیتابیس Keycloak و Realm/configuration فعلی backup بگیرید. Provider عمداً migration دیتابیس اجرا نمی‌کند، اما تنظیمات Client و Broker که بعداً اعمال می‌شوند در دیتابیس ذخیره خواهند شد.
+4. image tag، فرمان startup، build-time optionها، متغیرهای محیطی، فایل‌های mountشده و محتوای فعلی `providers/` را ثبت کنید.
+5. همین نسخه Keycloak، نوع دیتابیس، تنظیمات proxy/hostname و Realm نزدیک به Production را ابتدا در Staging آزمایش کنید.
+
+فایل Provider یک کد مورد اعتماد با سطح دسترسی پردازش Keycloak است. فقط artifact ساخته‌شده یا اعتبارسنجی‌شده را نصب کنید. جزئیات رسمی در مستند [تنظیم Providerهای Keycloak](https://www.keycloak.org/server/configuration-provider) موجود است.
+
+#### ۲-الف. نصب مستقیم ZIP یا Package
+
+نمونه زیر فرض می‌کند Keycloak در `/opt/keycloak` نصب شده و نام unit در systemd برابر `keycloak` است. مسیرها، service account، نام سرویس و به‌خصوص **build-time optionها** را با محیط واقعی خود تطبیق دهید.
+
+```bash
+# پیش از maintenance window، artifact تست‌شده را روی سرور قرار دهید.
+sha256sum /tmp/keycloak-wsfed.jar
+
+# ابتدا ترافیک را از این Node خارج و سپس Keycloak را متوقف کنید.
+sudo systemctl stop keycloak
+
+# در زمان Upgrade نسخه قبلی افزونه را نگه دارید.
+if sudo test -f /opt/keycloak/providers/keycloak-wsfed.jar; then
+  sudo cp -p /opt/keycloak/providers/keycloak-wsfed.jar \
+    /opt/keycloak/providers/keycloak-wsfed.jar.before-upgrade
+fi
+
+sudo install -o keycloak -g keycloak -m 0644 \
+  /tmp/keycloak-wsfed.jar \
+  /opt/keycloak/providers/keycloak-wsfed.jar
+
+# تمام build-time optionهای نصب فعلی را دوباره استفاده کنید.
+sudo -u keycloak /opt/keycloak/bin/kc.sh build --db=postgres
+
+sudo systemctl start keycloak
+sudo systemctl status keycloak --no-pager
+curl --fail --silent --show-error http://127.0.0.1:9000/health/ready
+```
+
+مقدار `--db=postgres` فقط نمونه است. حذف یا تغییر build-time optionهای فعلی می‌تواند خروجی متفاوتی از Build تأییدشده ایجاد کند. پس از Build موفق، فرمان Production موجود را حفظ کنید؛ محیط optimized باید همچنان با `start --optimized` اجرا شود.
+
+در Cluster چند Node، یک Node را از Load Balancer خارج کنید، آن را ارتقا داده و اعتبارسنجی کنید، سپس به سرویس برگردانید و سراغ Node بعدی بروید. تمام Nodeهای فعال باید نسخه یکسان Keycloak و افزونه را اجرا کنند. Provider را هم‌زمان روی تمام Nodeها جایگزین نکنید.
+
+#### ۲-ب. استقرار موجود Docker یا Podman
+
+از `docker cp` استفاده نکنید و container در حال اجرا را تغییر ندهید. بر پایه دقیقاً همان نسخه Keycloak تأییدشده در Production، یک image تغییرناپذیر جدید بسازید:
+
+```dockerfile
+FROM quay.io/keycloak/keycloak:26.7.0 AS builder
+
+COPY --chown=keycloak:keycloak --chmod=0644 \
+  keycloak-wsfed.jar /opt/keycloak/providers/keycloak-wsfed.jar
+RUN /opt/keycloak/bin/kc.sh build --db=postgres
+
+FROM quay.io/keycloak/keycloak:26.7.0
+COPY --from=builder /opt/keycloak/ /opt/keycloak/
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+```
+
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-1` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+
+#### ۲-ج. استقرار موجود Kubernetes
+
+از image تغییرناپذیر مرحله قبل استفاده کنید؛ فایل JAR را داخل Pod در حال اجرا mount یا inject نکنید. برای Kubernetes Deployment معمولی:
+
+```bash
+kubectl -n identity set image deployment/keycloak \
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-1
+
+kubectl -n identity rollout status deployment/keycloak --timeout=10m
+kubectl -n identity get pods
+```
+
+Readiness/Liveness Probeهای موجود را حفظ کنید و Rolling Strategy باید در طول انتشار حداقل یک instance اعتبارسنجی‌شده را در دسترس نگه دارد. پس از rollout بررسی کنید تعداد restartهای Pod افزایش پیدا نکرده باشد.
+
+در صورت استفاده از Keycloak Operator، custom image را در Custom Resource مربوط به Keycloak تنظیم کنید و نسخه Operator را با نسخه Keycloak داخل image یکسان نگه دارید:
+
+```yaml
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  image: registry.example.com/keycloak-wsfed:26.7.0-1
+  startOptimized: true
+```
+
+تنظیمات فعلی `instances`، hostname، TLS، دیتابیس، scheduling و secretها را حفظ کنید؛ نمونه بالا فقط فیلدهای مرتبط با custom image را نشان می‌دهد. راهنمای رسمی [Custom Image در Keycloak Operator](https://www.keycloak.org/operator/customizing-keycloak) جزئیات بیشتری دارد.
+
+#### ۳. اعتبارسنجی پس از انتشار
+
+تا قبل از موفقیت تمام موارد زیر، Relying Party محیط Production را تنظیم نکنید:
+
+1. Readiness تمام Nodeها روی `/health/ready` در management port که معمولاً `9000` است سالم باشد.
+2. در Startup Log هیچ خطای بارگذاری Provider، linkage error، `ClassNotFoundException` یا `NoSuchMethodError` وجود نداشته باشد.
+3. گزینه `WS-Fed` در مسیر **Identity Providers → Add provider** دیده شود.
+4. در Realm آزمایشی، مسیر `/realms/{realm}/protocol/wsfed/descriptor` پاسخ XML با HTTP 200 بدهد.
+5. یک درخواست کنترل‌شده `wsignin1.0` وارد Login Flow شود و مقادیر مورد انتظار `wtrealm`، `wreply` و `wctx` حفظ شوند.
+6. Smoke Testهای OIDC و SAML موجود، Login، Logout، اتصال دیتابیس، Cluster Discovery، Metricها و baseline حافظه/Startup سالم باقی بمانند.
+
+فقط پس از این بررسی‌ها تنظیم Client یا Broker بخش بعد را اعمال کنید. کار را با یک Relying Party کم‌ریسک شروع و اعتبارسنجی امضا را فعال نگه دارید.
+
+#### ۴. Rollback
+
+در صورت شکست اعتبارسنجی، ترافیک را از instance معیوب خارج کنید. در Container یا Kubernetes، image tag تغییرناپذیر قبلی را دوباره deploy کنید. برای Deployment معمولی:
+
+```bash
+kubectl -n identity rollout undo deployment/keycloak
+kubectl -n identity rollout status deployment/keycloak --timeout=10m
+```
+
+در نصب مستقیم، Keycloak را متوقف کنید، JAR جدید را حذف و در صورت وجود فایل `keycloak-wsfed.jar.before-upgrade` آن را بازیابی کنید. سپس `kc.sh build` را با build-time optionهای قبلی اجرا و سرویس را راه‌اندازی کنید. اگر تنظیمات Client یا Broker تغییر کرده‌اند، آن رکوردها یا backup دیتابیس/Realm را جداگانه برگردانید. حذف JAR تنظیمات ذخیره‌شده در دیتابیس را حذف نمی‌کند.
 
 ### پیکربندی
 
