@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "migration/**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -32,3 +32,26 @@ jobs:
           name: keycloak-wsfed
           path: keycloak-wsfed/target/keycloak-wsfed-*.jar
           if-no-files-found: error
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate examples and scripts
+        run: |
+          jq --exit-status . examples/realm-wsfed-idp.json >/dev/null
+          bash -n scripts/*.sh keycloak-wsfed/install.sh
+          docker compose config --quiet
+      - name: Build and start the example stack
+        run: docker compose up --detach --build
+      - name: Run WS-Federation smoke test
+        run: |
+          ./scripts/smoke-test.sh
+          ./scripts/integration-test.sh
+      - name: Show server logs on failure
+        if: failure()
+        run: docker compose logs keycloak
+      - name: Stop the example stack
+        if: always()
+        run: docker compose down --volumes

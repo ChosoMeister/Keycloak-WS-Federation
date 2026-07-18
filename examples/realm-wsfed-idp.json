@@ -1,0 +1,25 @@
+{
+  "realm": "wsfed-demo",
+  "enabled": true,
+  "displayName": "WS-Federation Demo",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "clients": [
+    {
+      "clientId": "urn:example:wsfed:rp",
+      "name": "Example WS-Federation relying party",
+      "description": "Replace the example callback before production use.",
+      "protocol": "wsfed",
+      "enabled": true,
+      "publicClient": true,
+      "bearerOnly": false,
+      "baseUrl": "http://localhost:9999/",
+      "redirectUris": ["http://localhost:9999/callback"],
+      "attributes": {
+        "wsfed.saml_assertion_token_format": "SAML 2.0",
+        "wsfed.jwt": "false",
+        "wsfed.x5t": "false"
+      }
+    }
+  ]
+}
