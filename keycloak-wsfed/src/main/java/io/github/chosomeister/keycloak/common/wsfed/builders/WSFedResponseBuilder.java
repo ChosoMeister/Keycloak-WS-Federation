@@ -220,7 +220,7 @@ public class WSFedResponseBuilder {
         }
         StringBuilder out = new StringBuilder();
         for (char c : s.toCharArray()) {
-            if (c > 127 || c == '"' || c == '<' || c == '>' || c == '&') {
+            if (c > 127 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '&') {
                 out.append("&#").append((int) c).append(';');
             } else {
                 out.append(c);

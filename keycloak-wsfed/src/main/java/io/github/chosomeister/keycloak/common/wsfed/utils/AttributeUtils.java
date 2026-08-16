@@ -25,6 +25,12 @@ public class AttributeUtils {
     }
 
     private static boolean filterAttribute(AttributeType attr, String name, String friendly) {
+        //With no name and no friendly name every attribute matches, so a mapper saved with both
+        //fields empty would bind to whichever attribute happens to come first. Match nothing
+        //instead, so a misconfigured mapper stays inert rather than mapping an arbitrary claim.
+        if (name == null && friendly == null) {
+            return false;
+        }
         if (name != null && !name.equals(attr.getName())) {
             return false;
         }

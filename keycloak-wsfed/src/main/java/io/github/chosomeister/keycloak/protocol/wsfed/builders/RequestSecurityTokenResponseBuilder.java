@@ -256,7 +256,9 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
             response.setRequestedUnattachedReference(new RequestedReferenceType());
             response.getRequestedUnattachedReference().setSecurityTokenReference(new SecurityTokenReferenceType());
             KeyIdentifierType ki = new KeyIdentifierType();
-            ki.setValue(IDGenerator.create("ID_"));
+            //The reference must identify the assertion that was just issued. A freshly generated id
+            //here points at nothing, so any relying party that resolves the reference fails.
+            ki.setValue(samlToken.getID());
             ki.setValueType("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID");
             response.getRequestedUnattachedReference().getSecurityTokenReference().addAny(ki);
 

@@ -64,7 +64,7 @@ import java.util.Objects;
  * @date 10/4/2016
  */
 public class SAML11RequestedToken implements RequestedToken {
-    protected static final Logger logger = Logger.getLogger(SAML2RequestedToken.class);
+    protected static final Logger logger = Logger.getLogger(SAML11RequestedToken.class);
 
     private SAML11AssertionType samlAssertion;
     private String wsfedResponse;
@@ -278,8 +278,10 @@ public class SAML11RequestedToken implements RequestedToken {
     private boolean isValidAudienceRestriction(URI... uris) {
         List<URI> audienceRestriction = getAudienceRestrictions();
 
-        if (audienceRestriction == null) {
-            return true;
+        //An assertion without an audience restriction is not scoped to this relying party, so it
+        //must not be accepted: the same issuer may have minted it for a different party.
+        if (audienceRestriction == null || audienceRestriction.isEmpty()) {
+            return false;
         }
 
         for (URI uri : uris) {

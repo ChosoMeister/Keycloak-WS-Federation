@@ -29,8 +29,10 @@ import org.keycloak.common.ClientConnection;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.protocol.oidc.utils.RedirectUtils;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.saml.common.exceptions.ConfigurationException;
 import org.keycloak.saml.common.exceptions.NotImplementedException;
@@ -291,7 +293,8 @@ public class WSFedEndpoint {
         String decodedContext = URLDecoder.decode(context, StandardCharsets.UTF_8.name());
         if (decodedContext.contains("redirectUri=")) {
             Map<String, String> map = getContextParameters(decodedContext);
-            String redirectUri = URLDecoder.decode(map.get("redirectUri"), StandardCharsets.UTF_8.name());
+            String redirectUri = verifyContextRedirectUri(
+                    URLDecoder.decode(map.get("redirectUri"), StandardCharsets.UTF_8.name()));
             if (decodedContext.contains("&code=")) {
                 //TODO not sure that we indeed have a AuthenticationSessionModel here. It could potentially be a AuthenticatedClientSessionModel. ALSO tabID set to null, but likely broken
                 ClientSessionCode.ParseResult<AuthenticationSessionModel> clientCode = ClientSessionCode.parseResult(map.get("code"), null, this.session, this.session.getContext().getRealm(), this.session.getContext().getClient(), event, AuthenticationSessionModel.class);
@@ -320,6 +323,28 @@ public class WSFedEndpoint {
         return null;
     }
 
+    /**
+     * The wctx relay state is echoed back by the external identity provider and is therefore
+     * attacker-controllable. Any redirect target taken from it must be validated against a
+     * registered client redirect uri, otherwise the broker callback is an open redirect.
+     *
+     * @param redirectUri the raw redirect target extracted from wctx
+     * @return the validated redirect uri
+     * @throws IdentityBrokerException when the target cannot be validated
+     */
+    private String verifyContextRedirectUri(String redirectUri) {
+        ClientModel client = session.getContext().getClient();
+        String verified = client == null
+                ? null
+                : RedirectUtils.verifyRedirectUri(session, redirectUri, client);
+
+        if (verified == null) {
+            event.error(Errors.INVALID_REDIRECT_URI);
+            throw new IdentityBrokerException("Invalid redirectUri in the WS-Fed context parameter.");
+        }
+        return verified;
+    }
+
     private static void whenNotNull(String value, Consumer<String> action) {
         if (value!=null) {
             action.accept(value);
@@ -342,7 +367,10 @@ public class WSFedEndpoint {
             if (rstr.getTokenType().compareTo(URI.create("urn:oasis:names:tc:SAML:2.0:assertion")) == 0 ||
                     rstr.getTokenType().compareTo(URI.create("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0")) == 0) {
                 token = new SAML2RequestedToken(session, wsfedResponse, rt, realm);
-            } else if (rstr.getTokenType().compareTo(URI.create("urn:oasis:names:tc:SAML:1.0:assertion")) == 0) {
+            } else if (rstr.getTokenType().compareTo(URI.create("urn:oasis:names:tc:SAML:1.0:assertion")) == 0 ||
+                    rstr.getTokenType().compareTo(URI.create("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1")) == 0) {
+                //AD FS and other WS-Trust implementations announce SAML 1.1 with the token profile
+                //URI rather than the assertion namespace, mirroring the SAML 2.0 branch above.
                 token = new SAML11RequestedToken(wsfedResponse, rt);
             } else if (rstr.getTokenType().compareTo(URI.create("urn:ietf:params:oauth:token-type:jwt")) == 0) {
                 throw new NotImplementedException("We don't currently support a token type of urn:ietf:params:oauth:token-type:jwt");
@@ -420,7 +448,15 @@ public class WSFedEndpoint {
                 rstr = responses.get(0);
             }
 
+            if (rstr == null) {
+                //Anything else is not a WS-Trust response we can consume. Returning null here would
+                //surface as a NullPointerException in the caller instead of a parse failure.
+                throw new ParsingException("WS-Federation response did not contain a RequestSecurityTokenResponse.");
+            }
+
             return rstr;
+        } catch (ParsingException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new ParsingException(ex);
         }

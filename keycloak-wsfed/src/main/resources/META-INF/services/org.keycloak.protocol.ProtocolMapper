@@ -1,7 +1,8 @@
-#io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCAddressMapper
-#io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCFullNameMapper
-#io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCUserPropertyMapper
+io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCAddressMapper
+io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCFullNameMapper
+io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCUserPropertyMapper
 io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLRoleListMapper
+io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLUserFullNameAttributeStatementMapper
 io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLUserPropertyAttributeStatementMapper
 io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLUserAttributeStatementMapper
 io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLGroupMembershipMapper

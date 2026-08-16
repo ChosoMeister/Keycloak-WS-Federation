@@ -188,8 +188,18 @@ public class WSFedService extends AuthorizationEndpointBase {
      * @return a response corresponding to an error page if the sanity checks fail, and null otherwise
      */
     protected Response clientChecks(ClientModel client, WSFedProtocolParameters params) {
+        //A resolved client must always be a WS-Federation client. Without this the endpoint would
+        //happily mint a signed WS-Fed token for any OIDC or SAML client in the same realm, since
+        //wtrealm is looked up by client id alone. This is checked before the signout shortcut
+        //because logout acts on the client too.
+        if (client != null && !WSFedLoginProtocol.LOGIN_PROTOCOL.equals(client.getProtocol())) {
+            event.event(EventType.LOGIN);
+            event.error(Errors.INVALID_CLIENT);
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.UNKNOWN_LOGIN_REQUESTER);
+        }
+
         if (isSignout(params)) {
-            return null; //client checks not required for logout
+            return null; //remaining client checks are not required for logout
         }
 
         if (client == null) {
@@ -281,26 +291,36 @@ public class WSFedService extends AuthorizationEndpointBase {
         event.event(EventType.LOGIN);
 
         //Essentially ACS
-        String redirect = RedirectUtils.verifyRedirectUri(session, params.getWsfedReply(), client);
-
-        if (redirect == null && !client.getRedirectUris().isEmpty()) {
-            //wreply is optional so if it's not specified use the base url
+        String redirect;
+        if (params.getWsfedReply() == null) {
+            //wreply is optional, so when it is absent fall back to the client's base url
             redirect = client.getBaseUrl();
+        } else {
+            //wreply was supplied, so it must validate against the client's registered redirect
+            //uris. Falling back to the base url here would silently turn a rejected reply address
+            //into a successful login.
+            redirect = RedirectUtils.verifyRedirectUri(session, params.getWsfedReply(), client);
         }
+
         if (redirect == null) {
             event.error(Errors.INVALID_REDIRECT_URI);
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REDIRECT_URI);
         }
 
-        //WS-FED doesn't carry connection state at this point, but a freshness of 0 indicates a demand to re-prompt
-        //for authentication (indicating the request is not new), maybe. TODO check logic
-        //However, requestState isn't actually used any more :-/
+        //The freshness is passed as the request state for traceability. The re-authentication
+        //decision it drives is made by WSFedLoginProtocol.requireReauthentication, from the client
+        //note set below.
         AuthenticationSessionModel authSession = createAuthenticationSession(client, params.getWsfedFreshness());
 
         authSession.setProtocol(WSFedLoginProtocol.LOGIN_PROTOCOL);
         authSession.setRedirectUri(redirect);
         authSession.setAction(AuthenticationSessionModel.Action.AUTHENTICATE.name());
         authSession.setClientNote(WSFedConstants.WSFED_CONTEXT, params.getWsfedContext());
+        //Carried so WSFedLoginProtocol.requireReauthentication can bound the age of an existing
+        //SSO session against the freshness the relying party asked for.
+        if (params.getWsfedFreshness() != null) {
+            authSession.setClientNote(WSFedConstants.WSFED_FRESHNESS, params.getWsfedFreshness());
+        }
         authSession.setClientNote(OIDCLoginProtocol.ISSUER, RealmsResource.realmBaseUrl(session.getContext().getUri()).build(realm.getName()).toString());
 
         LoginProtocol wsfedProtocol = new WSFedLoginProtocol().setEventBuilder(event).setHttpHeaders(headers).setRealm(realm).setSession(session).setUriInfo(session.getContext().getUri());
@@ -325,6 +345,13 @@ public class WSFedService extends AuthorizationEndpointBase {
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REDIRECT_URI);
         }
 
+        if (logoutUrl == null) {
+            //Either wreply was absent and the client has no base url, or it failed validation.
+            event.event(EventType.LOGOUT);
+            event.error(Errors.INVALID_REDIRECT_URI);
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REDIRECT_URI);
+        }
+
         AuthenticationManager.AuthResult authResult = authenticateIdentityCookie();
         if (authResult != null) {
             UserSessionModel userSession = authResult.getSession();
@@ -332,9 +359,10 @@ public class WSFedService extends AuthorizationEndpointBase {
             userSession.setNote(WSFedLoginProtocol.WSFED_CONTEXT, params.getWsfedContext());
             userSession.setNote(AuthenticationManager.KEYCLOAK_LOGOUT_PROTOCOL, WSFedLoginProtocol.LOGIN_PROTOCOL);
 
-            // remove client from logout requests
+            // remove client from logout requests. The user may never have logged into this
+            // particular client, in which case there is no client session to mark.
             AuthenticatedClientSessionModel clientSession = userSession.getAuthenticatedClientSessions().get(client.getId());
-            if (clientSession.getClient().getId().equals(client.getId())) {
+            if (clientSession != null) {
                 clientSession.setAction(CommonClientSessionModel.Action.LOGGED_OUT.name());
             }
 

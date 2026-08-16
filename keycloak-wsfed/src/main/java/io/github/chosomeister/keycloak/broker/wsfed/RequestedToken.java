@@ -94,12 +94,19 @@ public interface RequestedToken {
             XPathExpression xPathExpression = xpath.compile("//*[local-name() = 'Assertion']");
 
             NodeList samlNodes = (NodeList) xPathExpression.evaluate(document, XPathConstants.NODESET);
-            Document samlDoc = newDocumentBuilder().newDocument();
-            for (int i = 0; i < samlNodes.getLength(); i++) {
-                Node node = samlNodes.item(i);
-                Node copyNode = samlDoc.importNode(node, true);
-                samlDoc.appendChild(copyNode);
+
+            //The signature is verified over the assertion found here, while the claims are read
+            //from the assertion the WS-Trust parser produced. Allowing more than one assertion
+            //would let a response carry a signed decoy alongside the unsigned assertion that is
+            //actually consumed, which is the classic XML signature wrapping attack. A response
+            //carrying anything other than exactly one assertion is therefore rejected outright.
+            if (samlNodes.getLength() != 1) {
+                throw new ProcessingException(
+                        "Expected exactly one Assertion in the WS-Fed response but found " + samlNodes.getLength() + ".");
             }
+
+            Document samlDoc = newDocumentBuilder().newDocument();
+            samlDoc.appendChild(samlDoc.importNode(samlNodes.item(0), true));
             return samlDoc;
         } catch (XPathExpressionException | ParserConfigurationException e) {
             throw new ProcessingException("Error while extracting SAML Assertion from WSFed XML document.", e);
