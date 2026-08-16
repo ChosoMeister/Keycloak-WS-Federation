@@ -156,6 +156,34 @@ ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 
 Start it using the normal Keycloak production options for your database, hostname, TLS, proxy, cache, and observability configuration.
 
+#### Upgrading the extension in a running container
+
+> [!IMPORTANT]
+> Replacing the JAR is not enough on its own. Keycloak resolves providers from the augmented server tree produced by `kc.sh build`, so a container that was already built keeps serving the previous version of the extension until it is rebuilt and replaced.
+
+`docker compose restart` reuses the existing container and therefore keeps the old provider. Recreate the container instead:
+
+```bash
+docker compose up --detach --build --force-recreate keycloak
+```
+
+When the JAR is bind-mounted into `providers/` rather than baked into the image, confirm that the new file is the one the container sees and that no older copy remains beside it:
+
+```bash
+docker compose exec -T keycloak ls -l /opt/keycloak/providers/
+```
+
+To confirm which build is actually serving traffic, compare the registered mapper types against the built-in mappers. Every built-in must resolve to a registered type; any that does not indicates a stale provider:
+
+```bash
+curl -s -H "Authorization: Bearer ${TOKEN}" "${KEYCLOAK_URL}/admin/serverinfo" \
+  | jq '{types: (.protocolMapperTypes.wsfed | length),
+         unresolved: ([.builtinProtocolMappers.wsfed[].protocolMapper]
+                      - [.protocolMapperTypes.wsfed[].id] | length)}'
+```
+
+A current build reports eight mapper types and no unresolved built-ins. Do not compare JAR checksums between machines: the archive embeds build timestamps, so identical sources produce different digests.
+
 ### Adding the extension to an existing production Keycloak
 
 Use this runbook when Keycloak is already installed and serving traffic. Do not test a new provider for the first time on the only production instance.
@@ -667,6 +695,34 @@ ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 
 برای اجرای نهایی، تنظیمات استاندارد محیط Production شامل دیتابیس، hostname، TLS، پراکسی، cache و observability را مطابق معماری خود اعمال کنید.
 
+#### به‌روزرسانی افزونه در کانتینر در حال اجرا
+
+> [!IMPORTANT]
+> جایگزینی JAR به‌تنهایی کافی نیست. Keycloak پروایدرها را از درخت augment‌شده‌ای که `kc.sh build` تولید می‌کند resolve می‌کند؛ بنابراین کانتینری که قبلاً build شده تا زمان بازسازی و جایگزینی، همچنان نسخه قبلی افزونه را سرو می‌کند.
+
+دستور `docker compose restart` کانتینر موجود را دوباره استفاده می‌کند و در نتیجه پروایدر قدیمی باقی می‌ماند. به‌جای آن کانتینر را recreate کنید:
+
+```bash
+docker compose up --detach --build --force-recreate keycloak
+```
+
+اگر JAR به‌جای قرارگرفتن داخل image به `providers/` بایند شده است، مطمئن شوید کانتینر همان فایل جدید را می‌بیند و نسخه قدیمی در کنار آن باقی نمانده است:
+
+```bash
+docker compose exec -T keycloak ls -l /opt/keycloak/providers/
+```
+
+برای اطمینان از اینکه کدام build واقعاً در حال سرویس‌دهی است، Mapper Typeهای ثبت‌شده را با Mapperهای پیش‌فرض مقایسه کنید. هر Mapper پیش‌فرض باید به یک Type ثبت‌شده resolve شود و هر مورد resolve‌نشده نشانه باقی‌ماندن پروایدر قدیمی است:
+
+```bash
+curl -s -H "Authorization: Bearer ${TOKEN}" "${KEYCLOAK_URL}/admin/serverinfo" \
+  | jq '{types: (.protocolMapperTypes.wsfed | length),
+         unresolved: ([.builtinProtocolMappers.wsfed[].protocolMapper]
+                      - [.protocolMapperTypes.wsfed[].id] | length)}'
+```
+
+یک build به‌روز، هشت Mapper Type و صفر مورد resolve‌نشده گزارش می‌کند. از مقایسه checksum فایل JAR بین ماشین‌ها استفاده نکنید: آرشیو حاوی timestamp ساخت است و سورس یکسان روی ماشین‌های مختلف digest متفاوت تولید می‌کند.
+
 ### افزودن افزونه به Keycloak عملیاتی موجود
 
 این Runbook برای زمانی است که Keycloak از قبل نصب شده و در حال سرویس‌دهی است. افزونه جدید را برای اولین بار روی تنها instance محیط Production آزمایش نکنید.
@@ -796,6 +852,12 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 | صدور توکن WS-Federation توسط Keycloak برای یک Relying Party | منوی اصلی جداگانه‌ای اضافه نمی‌شود. Wizard ساخت Client در Keycloak نقطه توسعه پشتیبانی‌شده‌ای برای این Login Protocol سفارشی ندارد. Client با `protocol=wsfed` را از طریق اسکریپت پروژه، Admin REST API یا Realm Import بسازید. Client پس از ساخت در Console قابل مشاهده است. |
 
 اگر گزینه `WS-Fed` در **Identity Providers** دیده نمی‌شود، قرارگرفتن JAR در `providers/`، موفقیت `kc.sh build` و کپی‌شدن درخت بازسازی‌شده `/opt/keycloak` به image نهایی را بررسی کنید.
+
+#### چرا نوع Client به‌جای `WS-Federation` مقدار `wsfed` نشان داده می‌شود؟
+
+Admin Console برچسب پروتکل‌ها را از طریق یک `switch` ثابت در تابع `getProtocolName` تعیین می‌کند که تنها پروتکل‌های همراه خود Keycloak را پوشش می‌دهد و در حالت پیش‌فرض، شناسه خام Provider را برمی‌گرداند. هیچ SPI، Theme یا Message Bundle‌ای این رفتار را override نمی‌کند؛ بنابراین تغییر این برچسب تنها با تغییر خود شناسه Provider ممکن است. این شناسه هم‌زمان بخش مسیر `/realms/{realm}/protocol/wsfed` و مقدار `protocol` ذخیره‌شده روی هر Client و Realm Export است، و به همین دلیل عمداً `wsfed` باقی مانده تا سازگاری در سطح Wire و Realm Export حفظ شود.
+
+دو محدودیت دیگر Console از همین نبود نقطه توسعه ناشی می‌شوند و رفتار مورد انتظار هستند، نه نقص: مرحله **Capability config** در Wizard برای Clientهای `wsfed` خالی رندر می‌شود، و به‌جز فهرست کشویی نوع Client، مدخل دیگری برای WS-Federation به رابط ساخت Client اضافه نمی‌شود. Clientهایی که از طریق Wizard، اسکریپت‌های پروژه، Admin REST API یا Realm Import ساخته شوند، همگی درست کار می‌کنند.
 
 #### استفاده از Keycloak به‌عنوان ارائه‌دهنده WS-Federation
 
