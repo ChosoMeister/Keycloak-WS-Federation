@@ -286,6 +286,12 @@ The extension has two distinct modes:
 
 If `WS-Fed` is missing from **Identity Providers**, verify that the JAR is in `providers/`, that `kc.sh build` completed, and that the running image contains the rebuilt `/opt/keycloak` tree.
 
+#### Why does the client type read `wsfed` rather than `WS-Federation`?
+
+The Admin Console resolves protocol labels through a hardcoded `getProtocolName` switch that covers only the protocols shipped with Keycloak and falls back to returning the raw provider id. No SPI, theme, or message bundle overrides it, so the label can only be changed by renaming the provider id itself. That id is also the `/realms/{realm}/protocol/wsfed` path segment and the `protocol` value stored on every client and realm export, so it is deliberately left as `wsfed` to preserve wire-level and realm-export compatibility.
+
+Two console limitations follow from the same lack of an extension point and are expected, not defects: the **Capability config** wizard step renders empty for `wsfed` clients, and no WS-Federation entry is added to the client-creation UI beyond the client-type dropdown. Clients created through the wizard, the supplied scripts, the Admin REST API, or realm import all work correctly.
+
 #### Keycloak as a WS-Federation Identity Provider
 
 In this mode, a legacy application or service such as a WS-Federation relying party redirects the browser to Keycloak. Keycloak authenticates the user and posts a signed token back to the application's reply URL.

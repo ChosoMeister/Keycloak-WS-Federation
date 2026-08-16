@@ -16,8 +16,10 @@
 
 package io.github.chosomeister.keycloak.protocol.wsfed;
 
+import io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCAddressMapper;
 import io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCFullNameMapper;
 import io.github.chosomeister.keycloak.protocol.wsfed.mappers.OIDCUserPropertyMapper;
+import io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLRoleListMapper;
 import io.github.chosomeister.keycloak.protocol.wsfed.mappers.SAMLUserPropertyAttributeStatementMapper;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.ClientModel;
@@ -25,9 +27,7 @@ import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.protocol.AbstractLoginProtocolFactory;
-import org.keycloak.protocol.oidc.mappers.AddressMapper;
 import org.keycloak.protocol.saml.mappers.AttributeStatementHelper;
-import org.keycloak.protocol.saml.mappers.RoleListMapper;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.saml.processing.core.saml.v2.constants.X500SAMLProfileConstants;
@@ -93,7 +93,7 @@ public abstract class AbstractWSFedLoginProtocolFactory extends AbstractLoginPro
             OIDCUserPropertyMapper.createClaimMapper(FAMILY_NAME, "lastName", "family_name", T_STRING, true, FAMILY_NAME_CONSENT_TEXT, true, true),
             OIDCUserPropertyMapper.createClaimMapper(EMAIL_VERIFIED, "emailVerified", "email_verified", T_BOOL, false, EMAIL_VERIFIED_CONSENT_TEXT, true, true),
             OIDCFullNameMapper.create(FULL_NAME, true, true, true),
-            AddressMapper.createAddressMapper(),
+            OIDCAddressMapper.createAddressMapper(),
             //SAML
             SAMLUserPropertyAttributeStatementMapper.createAttributeMapper("X500 email", EMAIL, X500SAMLProfileConstants.EMAIL.get(),
                 JBossSAMLURIConstants.ATTRIBUTE_FORMAT_URI.get(), X500SAMLProfileConstants.EMAIL.getFriendlyName(), true, EMAIL_CONSENT_TEXT),
@@ -101,7 +101,7 @@ public abstract class AbstractWSFedLoginProtocolFactory extends AbstractLoginPro
                 JBossSAMLURIConstants.ATTRIBUTE_FORMAT_URI.get(), X500SAMLProfileConstants.GIVEN_NAME.getFriendlyName(), true, GIVEN_NAME_CONSENT_TEXT),
             SAMLUserPropertyAttributeStatementMapper.createAttributeMapper("X500 surname", "lastName", X500SAMLProfileConstants.SURNAME.get(),
                 JBossSAMLURIConstants.ATTRIBUTE_FORMAT_URI.get(), X500SAMLProfileConstants.SURNAME.getFriendlyName(), true, FAMILY_NAME_CONSENT_TEXT),
-            RoleListMapper.create("saml role list", "Role", AttributeStatementHelper.BASIC, null, false)
+            SAMLRoleListMapper.create("saml role list", "Role", AttributeStatementHelper.BASIC, null, false)
         ).forEach(m -> builtins.put(m.getName(), m));
     }
 

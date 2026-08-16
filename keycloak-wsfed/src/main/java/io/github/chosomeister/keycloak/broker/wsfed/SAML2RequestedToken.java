@@ -91,7 +91,18 @@ public class SAML2RequestedToken implements RequestedToken {
             Document doc = createXmlDocument(wsfedResponse);
             logger.tracef("wsfedResponse [%s].", wsfedResponse);
 
-            if(!AssertionUtil.isSignatureValid(extractSamlDocument(doc).getDocumentElement(), key)) {
+            Element signedAssertion = extractSamlDocument(doc).getDocumentElement();
+
+            if(!AssertionUtil.isSignatureValid(signedAssertion, key)) {
+                event.event(EventType.IDENTITY_PROVIDER_RESPONSE);
+                event.error(Errors.INVALID_SIGNATURE);
+                return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_FEDERATED_IDENTITY_ACTION);
+            }
+
+            //Signature validation and claim extraction run over two separately parsed copies of the
+            //response. Binding them by assertion id guarantees the claims consumed below belong to
+            //the assertion that was actually verified.
+            if(!signedAssertion.getAttribute("ID").equals(saml2Assertion.getID())) {
                 event.event(EventType.IDENTITY_PROVIDER_RESPONSE);
                 event.error(Errors.INVALID_SIGNATURE);
                 return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_FEDERATED_IDENTITY_ACTION);
@@ -125,8 +136,10 @@ public class SAML2RequestedToken implements RequestedToken {
     protected boolean isValidAudienceRestriction(URI... uris) {
         List<URI> audienceRestriction = getAudienceRestrictions();
 
-        if(audienceRestriction == null) {
-            return true;
+        //An assertion without an audience restriction is not scoped to this relying party, so it
+        //must not be accepted: the same issuer may have minted it for a different party.
+        if(audienceRestriction == null || audienceRestriction.isEmpty()) {
+            return false;
         }
 
         for (URI uri : uris) {

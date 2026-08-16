@@ -16,6 +16,8 @@
 
 package io.github.chosomeister.keycloak.protocol.wsfed.mappers;
 
+import io.github.chosomeister.keycloak.protocol.wsfed.WSFedLoginProtocol;
+
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
@@ -60,6 +62,18 @@ public class OIDCAddressMapper extends AbstractWsfedProtocolMapper implements WS
     @Override
     public String getHelpText() {
         return "Maps user address attributes (street, locality, region, postal_code, and country) to the OpenID Connect 'address' claim.";
+    }
+
+    /**
+     * Builds the WS-Fed flavoured address mapper model. Keycloak's own
+     * {@link AddressMapper#createAddressMapper()} produces a model bound to the
+     * {@code openid-connect} protocol, which the WS-Fed protocol cannot resolve.
+     */
+    public static ProtocolMapperModel createAddressMapper() {
+        ProtocolMapperModel mapper = AddressMapper.createAddressMapper();
+        mapper.setProtocolMapper(PROVIDER_ID);
+        mapper.setProtocol(WSFedLoginProtocol.LOGIN_PROTOCOL);
+        return mapper;
     }
 
     @Override

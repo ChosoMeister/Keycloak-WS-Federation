@@ -28,6 +28,7 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 import org.keycloak.connections.httpclient.HttpClientProvider;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
@@ -42,6 +43,7 @@ import org.keycloak.protocol.oidc.utils.RedirectUtils;
 import org.keycloak.protocol.saml.SamlProtocolUtils;
 import org.keycloak.saml.common.exceptions.ConfigurationException;
 import org.keycloak.services.ErrorPage;
+import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
@@ -414,11 +416,48 @@ public class WSFedLoginProtocol implements LoginProtocol {
     }
 
     /**
+     * Implements the WS-Federation {@code wfresh} parameter. A relying party sends {@code wfresh}
+     * to bound how old the authentication backing the issued token may be, expressed in minutes;
+     * {@code wfresh=0} demands a fresh authentication. When the existing SSO session is older than
+     * the requested bound the user must authenticate again rather than being silently signed in.
+     *
+     * <p>A malformed value is ignored rather than treated as a demand for re-authentication:
+     * failing closed on an unparseable bound would re-prompt on every pass and never converge.
+     *
      * {@inheritDoc}
      */
     @Override
     public boolean requireReauthentication(UserSessionModel userSession, AuthenticationSessionModel authSession) {
-        return false;
+        String wsfedFreshness = authSession == null ? null : authSession.getClientNote(WSFedConstants.WSFED_FRESHNESS);
+
+        if (wsfedFreshness == null || wsfedFreshness.trim().isEmpty()) {
+            return false;
+        }
+
+        long maxAgeMinutes;
+        try {
+            maxAgeMinutes = Long.parseLong(wsfedFreshness.trim());
+        } catch (NumberFormatException e) {
+            logger.warnf("Ignoring malformed %s value [%s].", WSFedConstants.WSFED_FRESHNESS, wsfedFreshness);
+            return false;
+        }
+
+        //A negative freshness has no meaning in the specification, so impose no bound.
+        if (maxAgeMinutes < 0) {
+            return false;
+        }
+
+        String authTime = userSession == null ? null : userSession.getNote(AuthenticationManager.AUTH_TIME);
+        if (authTime == null) {
+            //No recorded authentication instant means the age cannot be shown to be within bounds.
+            return true;
+        }
+
+        try {
+            return Time.currentTime() - Long.parseLong(authTime) > maxAgeMinutes * 60;
+        } catch (NumberFormatException e) {
+            return true;
+        }
     }
 
     protected String getEndpoint(UriInfo uriInfo, RealmModel realm) {
