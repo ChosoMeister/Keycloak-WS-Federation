@@ -446,6 +446,51 @@ After saving, the provider can appear on the realm login page. Use the Identity 
 
 Signature validation should remain enabled in production.
 
+#### Active Directory claims for AD FS relying parties
+
+Relying parties written against AD FS expect Microsoft claim URIs rather than Keycloak's
+default attribute names. When users arrive through LDAP user federation, `scripts/configure-ad-claims.sh`
+configures both halves of that mapping and is safe to re-run:
+
+```bash
+export KEYCLOAK_URL='https://keycloak.example.com'
+export KEYCLOAK_ADMIN='admin'
+export KEYCLOAK_ADMIN_PASSWORD='replace-this-password'
+export WSFED_REALM='production'
+export WSFED_CLIENT_ID='urn:example:wsfed:rp'
+
+./scripts/configure-ad-claims.sh
+```
+
+| Claim | URI | Directory attribute |
+|---|---|---|
+| UPN | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn` | `userPrincipalName` |
+| Name | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` | `displayName` |
+| Windows account name | `http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname` | `msDS-PrincipalName` |
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `WSFED_LDAP_ALIAS` | Only with several LDAP providers | Name of the provider to attach the mappers to |
+| `WSFED_LDAP_UPN_ATTRIBUTE` | No | Source attribute for UPN; default `userPrincipalName` |
+| `WSFED_LDAP_NAME_ATTRIBUTE` | No | Source attribute for Name; default `displayName` |
+| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for the account name; default `msDS-PrincipalName` |
+
+Two conditions decide whether the claims actually reach the relying party.
+
+Since Keycloak 24 a realm rejects attributes its user profile does not declare. These claims travel
+on unmanaged attributes, so a realm left at the default policy issues an assertion with no claims at
+all. Set **Realm settings → General → Unmanaged Attributes** to *Enabled*, or declare the three
+attributes in the user profile. The script warns when the realm would drop them.
+
+`msDS-PrincipalName` is a constructed attribute rather than a stored one, and some directories do not
+return it. Confirm it arrives for a real account, and otherwise point `WSFED_LDAP_ACCOUNT_ATTRIBUTE`
+at an attribute holding the `DOMAIN\user` form.
+
+The primary SID claim is intentionally not configured here. Active Directory stores `objectSid` as
+binary and AD FS converts it to its SDDL string form before issuing it. Keycloak performs no such
+conversion, so mapping the attribute directly emits base64 that no relying party can match against.
+Issuing that claim faithfully requires a dedicated LDAP mapper.
+
 #### Certificate format and rotation
 
 The Broker accepts a PEM certificate or its Base64 certificate body. Supply the public signing certificate, never the private key. When an upstream IdP rotates certificates, update the configured certificate before the old key expires. Metadata auto-import is not implemented yet, so certificate rotation is an explicit administrative operation.
