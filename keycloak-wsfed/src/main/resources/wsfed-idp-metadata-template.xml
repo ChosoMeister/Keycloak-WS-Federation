@@ -3,17 +3,42 @@
 				  xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
 				  xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 				  xmlns:fed="http://docs.oasis-open.org/wsfed/federation/200706"
+				  xmlns:auth="http://docs.oasis-open.org/wsfed/authorization/200706"
 				  xmlns:wsa="http://www.w3.org/2005/08/addressing">
-	<RoleDescriptor xsi:type="fed:SecurityTokenServiceType" protocolSupportEnumeration="http://docs.oasis-open.org/wsfed/federation/200706">
+	<RoleDescriptor xsi:type="fed:SecurityTokenServiceType"
+					protocolSupportEnumeration="http://docs.oasis-open.org/ws-sx/ws-trust/200512 http://schemas.xmlsoap.org/ws/2005/02/trust http://docs.oasis-open.org/wsfed/federation/200706"
+					ServiceDisplayName="${idp.service.displayName}">
 		<KeyDescriptor use="signing">
-			<dsig:KeyInfo xmlns:dsig="http://www.w3.org/2000/09/xmldsig#">
-				<dsig:X509Data>
-					<dsig:X509Certificate>
+			<KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+				<X509Data>
+					<X509Certificate>
 						${idp.signing.certificate}
-					</dsig:X509Certificate>
-				</dsig:X509Data>
-			</dsig:KeyInfo>
+					</X509Certificate>
+				</X509Data>
+			</KeyInfo>
 		</KeyDescriptor>
+		<fed:TokenTypesOffered>
+			<fed:TokenType Uri="urn:oasis:names:tc:SAML:1.0:assertion"/>
+			<fed:TokenType Uri="urn:oasis:names:tc:SAML:2.0:assertion"/>
+		</fed:TokenTypesOffered>
+		<fed:ClaimTypesOffered>
+			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" Optional="true">
+				<auth:DisplayName>UPN</auth:DisplayName>
+				<auth:Description>The user principal name (UPN) of the user</auth:Description>
+			</auth:ClaimType>
+			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name" Optional="true">
+				<auth:DisplayName>Name</auth:DisplayName>
+				<auth:Description>The display name of the user</auth:Description>
+			</auth:ClaimType>
+			<auth:ClaimType Uri="http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname" Optional="true">
+				<auth:DisplayName>Windows account name</auth:DisplayName>
+				<auth:Description>The domain account name of the user in the form of domain\user</auth:Description>
+			</auth:ClaimType>
+			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" Optional="true">
+				<auth:DisplayName>E-Mail Address</auth:DisplayName>
+				<auth:Description>The e-mail address of the user</auth:Description>
+			</auth:ClaimType>
+		</fed:ClaimTypesOffered>
 		<fed:SecurityTokenServiceEndpoint>
 			<wsa:EndpointReference>
 				<wsa:Address>${idp.sso.sts}</wsa:Address>

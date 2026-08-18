@@ -446,6 +446,21 @@ After saving, the provider can appear on the realm login page. Use the Identity 
 
 Signature validation should remain enabled in production.
 
+#### Federation metadata for WS-Federation relying parties
+
+`/realms/{realm}/protocol/wsfed/descriptor` publishes the security token service descriptor. It
+advertises both SAML token types, the claim types the service can issue, WS-Trust alongside
+WS-Federation in `protocolSupportEnumeration`, and the realm signing certificate. Strict WS-Federation
+consumers, including the Dynamics 365 on-premises claims-based authentication wizard, validate the
+shape of this document before they will accept an endpoint and reject a descriptor that omits the
+token types or claim types.
+
+`fed:ClaimTypesOffered` advertises what the service is capable of issuing. It is not a promise about
+any single token: the claims a relying party receives come from the protocol mappers on its own
+client, configured by the helper below.
+
+The document is not signed. Relying parties that require signed metadata are not supported yet.
+
 #### Active Directory claims for AD FS relying parties
 
 Relying parties written against AD FS expect Microsoft claim URIs rather than Keycloak's
@@ -470,10 +485,18 @@ export WSFED_CLIENT_ID='urn:example:wsfed:rp'
 
 | Variable | Required | Meaning |
 |---|---|---|
+| `WSFED_TOKEN_FORMAT` | No | Overrides the client's own `SAML 1.1` / `SAML 2.0` setting |
 | `WSFED_LDAP_ALIAS` | Only with several LDAP providers | Name of the provider to attach the mappers to |
 | `WSFED_LDAP_UPN_ATTRIBUTE` | No | Source attribute for UPN; default `userPrincipalName` |
 | `WSFED_LDAP_NAME_ATTRIBUTE` | No | Source attribute for Name; default `displayName` |
 | `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for the account name; default `msDS-PrincipalName` |
+
+The two token formats identify an attribute differently, so the mappers are written to match
+whichever format the client issues; the script reads that from the client and reports it. Under
+SAML 2.0 the whole claim URI becomes the attribute name. Under SAML 1.1 it is split, because the
+extension emits the attribute name as the SAML 1.1 `AttributeName` and reads FriendlyName as the
+`AttributeNamespace`, which WIF rejoins into the claim URI. Sending the full URI as the name under
+SAML 1.1 would produce the wrong claim.
 
 Two conditions decide whether the claims actually reach the relying party.
 

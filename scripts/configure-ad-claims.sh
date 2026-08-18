@@ -60,6 +60,17 @@ client_protocol=$(jq -r '.[0].protocol // empty' <<<"${client_json}")
   exit 1
 }
 
+# SAML 1.1 and SAML 2.0 carry an attribute's identity differently, so the mappers have to be
+# written to match whichever format the client actually issues. The client's own setting is
+# authoritative; WSFED_TOKEN_FORMAT overrides it when the two are being changed together.
+client_format=$(jq -r '.[0].attributes["wsfed.saml_assertion_token_format"] // "SAML 2.0"' <<<"${client_json}")
+TOKEN_FORMAT="${WSFED_TOKEN_FORMAT:-${client_format}}"
+
+case "${TOKEN_FORMAT}" in
+  "SAML 2.0"|"SAML 1.1") ;;
+  *) echo "Token format must be 'SAML 2.0' or 'SAML 1.1', got '${TOKEN_FORMAT}'." >&2; exit 2 ;;
+esac
+
 # --- Resolve the LDAP user federation provider --------------------------------------------
 
 ldap_json=$("${KCADM}" get components -r "${WSFED_REALM}" \
@@ -150,15 +161,24 @@ upsert_protocol_mapper() {
 
   existing_id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"${existing_protocol_mappers}")
 
-  # SAML 2.0 carries the claim URI in the attribute name, so FriendlyName stays empty. Under
-  # SAML 1.1 this extension reads FriendlyName as the attribute namespace instead.
+  # SAML 2.0 puts the whole claim URI in the attribute name and leaves FriendlyName unused.
+  # SAML 1.1 splits it: this extension emits the attribute name as the SAML 1.1 AttributeName
+  # and reads FriendlyName as the AttributeNamespace, and WIF rebuilds the claim URI by joining
+  # the two. Sending the full URI as the name under SAML 1.1 therefore yields the wrong claim.
+  local attribute_name="$claim_uri" attribute_namespace=""
+  if [[ "${TOKEN_FORMAT}" == "SAML 1.1" ]]; then
+    attribute_name="${claim_uri##*/}"
+    attribute_namespace="${claim_uri%/*}"
+  fi
+
   # An update is rejected unless the representation carries the mapper id as well.
   payload=$(jq -n \
-    --arg name "$name" --arg ua "$user_attribute" --arg claim "$claim_uri" --arg id "$existing_id" \
+    --arg name "$name" --arg ua "$user_attribute" --arg an "$attribute_name" \
+    --arg ns "$attribute_namespace" --arg id "$existing_id" \
     '{name: $name, protocol: "wsfed",
       protocolMapper: "wsfed-saml-user-attribute-mapper",
-      config: {"user.attribute": $ua, "attribute.name": $claim,
-               "attribute.nameformat": "URI Reference", "friendly.name": ""}}
+      config: {"user.attribute": $ua, "attribute.name": $an,
+               "attribute.nameformat": "URI Reference", "friendly.name": $ns}}
      + (if $id == "" then {} else {id: $id} end)')
 
   if [[ -n "${existing_id}" ]]; then
@@ -172,7 +192,7 @@ upsert_protocol_mapper() {
   fi
 }
 
-echo "WS-Federation client: ${WSFED_CLIENT_ID}"
+echo "WS-Federation client: ${WSFED_CLIENT_ID} (token format: ${TOKEN_FORMAT})"
 upsert_protocol_mapper 'upn'                  "${USER_ATTR_UPN}"     "${CLAIM_UPN}"
 upsert_protocol_mapper 'name'                 "${USER_ATTR_NAME}"    "${CLAIM_NAME}"
 upsert_protocol_mapper 'windows account name' "${USER_ATTR_ACCOUNT}" "${CLAIM_ACCOUNT}"

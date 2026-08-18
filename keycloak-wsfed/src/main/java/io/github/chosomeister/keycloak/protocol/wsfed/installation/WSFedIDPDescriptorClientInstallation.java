@@ -65,8 +65,21 @@ public class WSFedIDPDescriptorClientInstallation implements ClientInstallationP
             template = template.replace("${idp.sso.sts}", RealmsResource.protocolUrl(UriBuilder.fromUri(uri)).build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL).toString());
             template = template.replace("${idp.sso.passive}", RealmsResource.protocolUrl(UriBuilder.fromUri(uri)).build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL).toString());
             template = template.replace("${idp.signing.certificate}", PemUtils.encodeCertificate(activeKey.getCertificate()));
+            template = template.replace("${idp.service.displayName}", serviceDisplayName(realm));
         }
         return template;
+    }
+
+    /**
+     * WS-Federation metadata carries a human readable name for the security token service.
+     * The realm display name is used when one is set, since that is what an administrator
+     * recognises, falling back to the realm name.
+     */
+    private static String serviceDisplayName(RealmModel realm) {
+        String displayName = realm.getDisplayName();
+        String name = (displayName == null || displayName.isBlank()) ? realm.getName() : displayName;
+        // The value lands in an XML attribute, so the delimiters have to be neutralised.
+        return name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     @Override
