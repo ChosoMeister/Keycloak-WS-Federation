@@ -30,13 +30,9 @@
 				<auth:DisplayName>Name</auth:DisplayName>
 				<auth:Description>The display name of the user</auth:Description>
 			</auth:ClaimType>
-			<auth:ClaimType Uri="http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname" Optional="true">
-				<auth:DisplayName>Windows account name</auth:DisplayName>
-				<auth:Description>The domain account name of the user in the form of domain\user</auth:Description>
-			</auth:ClaimType>
-			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" Optional="true">
-				<auth:DisplayName>E-Mail Address</auth:DisplayName>
-				<auth:Description>The e-mail address of the user</auth:Description>
+			<auth:ClaimType Uri="http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid" Optional="true">
+				<auth:DisplayName>Primary SID</auth:DisplayName>
+				<auth:Description>The security identifier (SID) of the user account</auth:Description>
 			</auth:ClaimType>
 		</fed:ClaimTypesOffered>
 		<fed:SecurityTokenServiceEndpoint>

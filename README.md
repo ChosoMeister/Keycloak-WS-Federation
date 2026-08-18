@@ -480,16 +480,29 @@ export WSFED_CLIENT_ID='urn:example:wsfed:rp'
 | Claim | URI | Directory attribute |
 |---|---|---|
 | UPN | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn` | `userPrincipalName` |
-| Name | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` | `displayName` |
-| Windows account name | `http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname` | `msDS-PrincipalName` |
+| Primary SID | `http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid` | `objectSid` |
+| Name | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` | `msDS-PrincipalName` |
+
+This is the claim set AD FS issues to Dynamics 365. Two details of it are easy to get wrong.
+
+The Name claim carries `DOMAIN\user`, not a display name: the AD FS rule reads the Windows account
+name and re-issues that value under the Name claim type, and relying parties provisioned against
+AD FS expect that form.
+
+The Primary SID must be the account's real `objectSid` rendered as `S-1-5-21-...`, because Dynamics
+365 keys its systemuser records on it; a wrong or missing SID fails sign-in with "user not found"
+even when the metadata and UPN are correct. Active Directory publishes `objectSid` as binary and
+Keycloak has no conversion for it, so this extension registers its own LDAP mapper,
+`wsfed-ad-primary-sid-mapper`, which the script configures. The stock attribute mapper would store
+base64 that matches nothing.
 
 | Variable | Required | Meaning |
 |---|---|---|
 | `WSFED_TOKEN_FORMAT` | No | Overrides the client's own `SAML 1.1` / `SAML 2.0` setting |
 | `WSFED_LDAP_ALIAS` | Only with several LDAP providers | Name of the provider to attach the mappers to |
 | `WSFED_LDAP_UPN_ATTRIBUTE` | No | Source attribute for UPN; default `userPrincipalName` |
-| `WSFED_LDAP_NAME_ATTRIBUTE` | No | Source attribute for Name; default `displayName` |
-| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for the account name; default `msDS-PrincipalName` |
+| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for Name; default `msDS-PrincipalName` |
+| `WSFED_LDAP_SID_ATTRIBUTE` | No | Source attribute for the SID; default `objectSid` |
 
 The two token formats identify an attribute differently, so the mappers are written to match
 whichever format the client issues; the script reads that from the client and reports it. Under
@@ -508,11 +521,6 @@ attributes in the user profile. The script warns when the realm would drop them.
 `msDS-PrincipalName` is a constructed attribute rather than a stored one, and some directories do not
 return it. Confirm it arrives for a real account, and otherwise point `WSFED_LDAP_ACCOUNT_ATTRIBUTE`
 at an attribute holding the `DOMAIN\user` form.
-
-The primary SID claim is intentionally not configured here. Active Directory stores `objectSid` as
-binary and AD FS converts it to its SDDL string form before issuing it. Keycloak performs no such
-conversion, so mapping the attribute directly emits base64 that no relying party can match against.
-Issuing that claim faithfully requires a dedicated LDAP mapper.
 
 #### Certificate format and rotation
 
