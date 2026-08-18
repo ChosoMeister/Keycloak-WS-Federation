@@ -87,8 +87,9 @@ class WSFedIDPDescriptorTemplateTest {
                 "UPN claim type is not advertised: " + offered);
         assertTrue(offered.contains("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"),
                 "Name claim type is not advertised: " + offered);
-        assertTrue(offered.contains("http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname"),
-                "Windows account name claim type is not advertised: " + offered);
+        // Dynamics 365 keys its systemuser records on the account SID, so it must be advertised.
+        assertTrue(offered.contains("http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid"),
+                "Primary SID claim type is not advertised: " + offered);
     }
 
     @Test

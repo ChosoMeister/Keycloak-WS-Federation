@@ -2,16 +2,19 @@
 set -euo pipefail
 
 # Publishes the AD-backed WS-Federation claims that AD FS relying parties expect:
-# UPN, Name, and Windows account name.
+# UPN, primary SID, and Name.
 #
 # Two layers are configured. LDAP mappers bring the Active Directory attributes into
 # Keycloak user attributes, and WS-Federation protocol mappers emit those user attributes
 # under the claim URIs the relying party knows. Both layers are idempotent.
 #
-# The primary SID claim is deliberately not handled here. Active Directory stores objectSid
-# as binary and AD FS converts it to its SDDL string form before issuing it. Keycloak has no
-# equivalent conversion, so mapping it directly would emit base64 that no relying party can
-# match against. That claim needs a dedicated LDAP mapper.
+# The Name claim deliberately carries DOMAIN\user rather than a display name, because that is
+# what AD FS issues: its rule reads windowsaccountname and re-emits the value under the name
+# claim type. Relying parties provisioned against AD FS expect that form.
+#
+# The primary SID is read through this extension's own LDAP mapper, which converts the binary
+# objectSid into the S-1-5-21-... string AD FS issues. The stock attribute mapper would store
+# base64 that no relying party can match against.
 
 : "${KEYCLOAK_URL:?Set KEYCLOAK_URL, for example https://keycloak.example.com}"
 : "${KEYCLOAK_ADMIN:?Set KEYCLOAK_ADMIN}"
@@ -25,17 +28,17 @@ LDAP_ALIAS="${WSFED_LDAP_ALIAS:-}"
 # Active Directory source attributes. msDS-PrincipalName is a constructed attribute holding
 # the NT-style DOMAIN\user form; override it when a directory does not return it.
 LDAP_UPN_ATTRIBUTE="${WSFED_LDAP_UPN_ATTRIBUTE:-userPrincipalName}"
-LDAP_NAME_ATTRIBUTE="${WSFED_LDAP_NAME_ATTRIBUTE:-displayName}"
 LDAP_ACCOUNT_ATTRIBUTE="${WSFED_LDAP_ACCOUNT_ATTRIBUTE:-msDS-PrincipalName}"
+LDAP_SID_ATTRIBUTE="${WSFED_LDAP_SID_ATTRIBUTE:-objectSid}"
 
 # Keycloak user attributes used to carry the values between the two layers.
 USER_ATTR_UPN='upn'
-USER_ATTR_NAME='adDisplayName'
 USER_ATTR_ACCOUNT='windowsAccountName'
+USER_ATTR_SID='ad_primary_sid'
 
 CLAIM_UPN='http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn'
 CLAIM_NAME='http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'
-CLAIM_ACCOUNT='http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname'
+CLAIM_SID='http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid'
 
 command -v jq >/dev/null || { echo "jq is required." >&2; exit 2; }
 
@@ -104,8 +107,8 @@ if [[ "${unmanaged_policy}" == "DISABLED" ]]; then
   cat >&2 <<EOF
 WARNING: realm ${WSFED_REALM} has unmanaged user attributes disabled.
 
-  The mappers below will be created, but ${USER_ATTR_UPN}, ${USER_ATTR_NAME} and
-  ${USER_ATTR_ACCOUNT} will not be readable, so the assertion will carry no claims.
+  The mappers below will be created, but ${USER_ATTR_UPN}, ${USER_ATTR_ACCOUNT} and
+  ${USER_ATTR_SID} will not be readable, so the assertion will carry no claims.
 
   Either enable unmanaged attributes for the realm:
 
@@ -146,10 +149,44 @@ upsert_ldap_mapper() {
   fi
 }
 
+# The SID needs this extension's own mapper rather than the stock attribute mapper, which would
+# store the raw binary base64 encoded.
+upsert_sid_mapper() {
+  local name="$1" user_attribute="$2" ldap_attribute="$3" payload existing_id
+
+  payload=$(jq -n \
+    --arg name "$name" --arg parent "${ldap_id}" \
+    --arg ua "$user_attribute" --arg la "$ldap_attribute" \
+    '{name: $name, parentId: $parent, providerId: "wsfed-ad-primary-sid-mapper",
+      providerType: "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+      config: {"user.model.attribute": [$ua], "ldap.attribute": [$la]}}')
+
+  existing_id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"${existing_ldap_mappers}")
+
+  if [[ -n "${existing_id}" ]]; then
+    printf '%s' "${payload}" | "${KCADM}" update "components/${existing_id}" -r "${WSFED_REALM}" -f -
+    echo "  updated SID mapper ${name} (${ldap_attribute} -> ${user_attribute})"
+  else
+    if ! printf '%s' "${payload}" | "${KCADM}" create components -r "${WSFED_REALM}" -f - 2>/dev/null; then
+      cat >&2 <<EOF
+
+ERROR: could not create the ${name} mapper.
+
+  The wsfed-ad-primary-sid-mapper provider is not registered on this server. It ships with this
+  extension, so the running Keycloak is using an older build. Rebuild the provider JAR from the
+  current source and recreate the container, then run this script again.
+
+EOF
+      exit 1
+    fi
+    echo "  created SID mapper ${name} (${ldap_attribute} -> ${user_attribute})"
+  fi
+}
+
 echo "LDAP provider: ${LDAP_ALIAS}"
 upsert_ldap_mapper 'wsfed-upn'                  "${USER_ATTR_UPN}"     "${LDAP_UPN_ATTRIBUTE}"
-upsert_ldap_mapper 'wsfed-display-name'         "${USER_ATTR_NAME}"    "${LDAP_NAME_ATTRIBUTE}"
 upsert_ldap_mapper 'wsfed-windows-account-name' "${USER_ATTR_ACCOUNT}" "${LDAP_ACCOUNT_ATTRIBUTE}"
+upsert_sid_mapper  'wsfed-primary-sid'          "${USER_ATTR_SID}"     "${LDAP_SID_ATTRIBUTE}"
 
 # --- WS-Federation protocol mappers ---------------------------------------------------------
 
@@ -193,9 +230,10 @@ upsert_protocol_mapper() {
 }
 
 echo "WS-Federation client: ${WSFED_CLIENT_ID} (token format: ${TOKEN_FORMAT})"
-upsert_protocol_mapper 'upn'                  "${USER_ATTR_UPN}"     "${CLAIM_UPN}"
-upsert_protocol_mapper 'name'                 "${USER_ATTR_NAME}"    "${CLAIM_NAME}"
-upsert_protocol_mapper 'windows account name' "${USER_ATTR_ACCOUNT}" "${CLAIM_ACCOUNT}"
+upsert_protocol_mapper 'upn'         "${USER_ATTR_UPN}"     "${CLAIM_UPN}"
+upsert_protocol_mapper 'primary sid'  "${USER_ATTR_SID}"     "${CLAIM_SID}"
+# AD FS sources the name claim from the Windows account name, so this is DOMAIN\user.
+upsert_protocol_mapper 'name'         "${USER_ATTR_ACCOUNT}" "${CLAIM_NAME}"
 
 cat <<EOF
 
