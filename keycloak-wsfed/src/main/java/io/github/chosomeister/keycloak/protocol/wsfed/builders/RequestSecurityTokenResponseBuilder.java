@@ -25,6 +25,7 @@ import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.xml.security.keys.KeyInfo;
 import org.keycloak.dom.saml.v1.assertion.SAML11AssertionType;
 import org.keycloak.dom.saml.v2.assertion.AssertionType;
+import org.keycloak.saml.common.util.XmlKeyInfoKeyNameTransformer;
 import org.keycloak.saml.RandomSecret;
 import org.keycloak.saml.SignatureAlgorithm;
 import org.keycloak.saml.common.constants.GeneralConstants;
@@ -68,6 +69,13 @@ import java.security.cert.X509Certificate;
  * This class is responsible for building the
  */
 public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
+    /**
+     * Mirrors Keycloak's SAML default so that a WS-Federation client behaves like a SAML client
+     * that was never explicitly configured.
+     */
+    public static final XmlKeyInfoKeyNameTransformer DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER =
+            XmlKeyInfoKeyNameTransformer.KEY_ID;
+
     protected String requestIssuer;
     protected int tokenExpiration;
     protected AssertionType samlToken;
@@ -79,6 +87,13 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
     protected X509Certificate signingCertificate;
     protected String keyId;
     protected String canonicalizationMethodType = CanonicalizationMethod.EXCLUSIVE;
+    /**
+     * Decides what, if anything, the signature's KeyInfo names the key by. Defaults to the same
+     * value Keycloak's own SAML protocol defaults to, so the emitted signature is unchanged unless
+     * a client asks for something else.
+     */
+    protected XmlKeyInfoKeyNameTransformer keyInfoKeyNameTransformer =
+            RequestSecurityTokenResponseBuilder.DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER;
 
     protected int encryptionKeySize = 128;
     protected PublicKey encryptionPublicKey;
@@ -140,6 +155,13 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
 
     public RequestSecurityTokenResponseBuilder setSigningKeyPair(KeyPair signingKeyPair) {
         this.signingKeyPair = signingKeyPair;
+        return this;
+    }
+
+    public RequestSecurityTokenResponseBuilder setKeyInfoKeyNameTransformer(XmlKeyInfoKeyNameTransformer keyInfoKeyNameTransformer) {
+        if (keyInfoKeyNameTransformer != null) {
+            this.keyInfoKeyNameTransformer = keyInfoKeyNameTransformer;
+        }
         return this;
     }
 
@@ -332,7 +354,12 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
             samlSignature.setX509Certificate(signingCertificate);
         }
 
-        samlSignature.signSAMLDocument(samlDocument, keyId, signingKeyPair, canonicalizationMethodType);
+        // A null key name leaves KeyInfo without a KeyName element. Some WS-Federation relying
+        // parties, notably WIF based ones such as Dynamics 365, fail to resolve the signing key
+        // when a KeyName they do not recognise is present.
+        String keyName = keyInfoKeyNameTransformer.getKeyName(keyId, signingCertificate);
+
+        samlSignature.signSAMLDocument(samlDocument, keyName, signingKeyPair, canonicalizationMethodType);
     }
 
     public String getStringValue() throws ConfigurationException, ProcessingException, org.picketlink.common.exceptions.ProcessingException {
