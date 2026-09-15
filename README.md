@@ -389,6 +389,33 @@ https://keycloak.example.com/realms/production/protocol/wsfed/descriptor
 
 Do not use broad wildcard redirect URIs in production.
 
+#### Naming the signing key in the signature
+
+Some relying parties fail to verify a signature whose `KeyInfo` carries a `KeyName` they cannot
+resolve. Relying parties built on Windows Identity Foundation, Dynamics 365 among them, report this
+as `ID4037`. The signing key is named according to the same client attribute Keycloak's SAML
+protocol uses, with the same values and the same default:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> \
+  -s 'attributes."saml.server.signature.keyinfo.xmlSigKeyInfoKeyNameTransformer"=NONE'
+```
+
+| Value | Effect |
+|---|---|
+| `KEY_ID` | `KeyName` holds the realm key id. The default, matching Keycloak's SAML protocol |
+| `NONE` | No `KeyName` element is emitted |
+| `CERT_SUBJECT` | `KeyName` holds the subject DN of the signing certificate |
+
+An unset or unrecognised value keeps the default, so upgrading changes nothing for existing clients.
+The signing certificate itself is always published in `KeyInfo` regardless, so a relying party can
+resolve the key from the certificate even when no `KeyName` is present.
+
+> [!NOTE]
+> This applies to SAML 2.0 assertions. A SAML 1.1 assertion never carries a `KeyName`, because the
+> signing path used for it has no way to express one. The attribute is accepted for SAML 1.1 clients
+> but changes nothing, and `NONE` is already the effective behaviour there.
+
 #### Keycloak as a WS-Federation broker
 
 In this mode, Keycloak redirects its users to an external WS-Federation IdP such as AD FS, consumes the signed response, and links or imports the external identity.
@@ -1003,6 +1030,26 @@ https://keycloak.example.com/realms/production/protocol/wsfed/descriptor
 ```
 
 در محیط Production از Redirect URIهای wildcard و گسترده استفاده نکنید.
+
+#### نام‌گذاری کلید امضا در Signature
+
+برخی Relying Party ها امضایی را که در `KeyInfo` خود یک `KeyName` غیرقابل resolve داشته باشد رد می‌کنند. Relying Party هایی که بر پایه Windows Identity Foundation ساخته شده‌اند، از جمله Dynamics 365، این وضعیت را با خطای `ID4037` گزارش می‌کنند. نام‌گذاری کلید امضا از همان Client Attribute ی پیروی می‌کند که پروتکل SAML خود Keycloak استفاده می‌کند، با همان مقادیر و همان پیش‌فرض:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> \
+  -s 'attributes."saml.server.signature.keyinfo.xmlSigKeyInfoKeyNameTransformer"=NONE'
+```
+
+| مقدار | اثر |
+|---|---|
+| `KEY_ID` | مقدار `KeyName` برابر شناسه کلید realm است. پیش‌فرض، مطابق پروتکل SAML خود Keycloak |
+| `NONE` | هیچ عنصر `KeyName` ی تولید نمی‌شود |
+| `CERT_SUBJECT` | مقدار `KeyName` برابر Subject DN گواهی امضا است |
+
+مقدار تنظیم‌نشده یا ناشناخته به پیش‌فرض برمی‌گردد، بنابراین ارتقا چیزی را برای Client های موجود تغییر نمی‌دهد. گواهی امضا در هر حالت داخل `KeyInfo` منتشر می‌شود، پس Relying Party حتی در نبود `KeyName` می‌تواند کلید را از روی گواهی resolve کند.
+
+> [!NOTE]
+> این مورد به Assertion های SAML 2.0 مربوط است. یک Assertion از نوع SAML 1.1 هرگز `KeyName` حمل نمی‌کند، چون مسیر امضایی که برای آن استفاده می‌شود راهی برای بیان آن ندارد. این Attribute برای Client های SAML 1.1 پذیرفته می‌شود ولی اثری ندارد و رفتار مؤثر آنجا از پیش همان `NONE` است.
 
 #### استفاده از Keycloak به‌عنوان Broker
 

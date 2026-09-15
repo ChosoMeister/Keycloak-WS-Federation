@@ -18,6 +18,7 @@ package io.github.chosomeister.keycloak.protocol.wsfed;
 
 import io.github.chosomeister.keycloak.common.wsfed.WSFedConstants;
 import io.github.chosomeister.keycloak.common.wsfed.builders.WSFedResponseBuilder;
+import io.github.chosomeister.keycloak.protocol.wsfed.builders.RequestSecurityTokenResponseBuilder;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.WSFedOIDCAccessTokenBuilder;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.WSFedSAML2AssertionTypeBuilder;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.WsFedSAML11AssertionTypeBuilder;
@@ -40,8 +41,10 @@ import org.keycloak.models.*;
 import org.keycloak.protocol.LoginProtocol;
 import org.keycloak.protocol.ClientData;
 import org.keycloak.protocol.oidc.utils.RedirectUtils;
+import org.keycloak.protocol.saml.SamlConfigAttributes;
 import org.keycloak.protocol.saml.SamlProtocolUtils;
 import org.keycloak.saml.common.exceptions.ConfigurationException;
+import org.keycloak.saml.common.util.XmlKeyInfoKeyNameTransformer;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.messages.Messages;
@@ -225,7 +228,8 @@ public class WSFedLoginProtocol implements LoginProtocol {
                     .setRequestIssuer(clientSession.getClient().getClientId())
                     .setSigningKeyPair(new KeyPair((PublicKey)activeKey.getPublicKey(), (PrivateKey)activeKey.getPrivateKey()))
                     .setSigningCertificate(activeKey.getCertificate())
-                    .setSigningKeyPairId(activeKey.getKid());
+                    .setSigningKeyPairId(activeKey.getKid())
+                    .setKeyInfoKeyNameTransformer(keyInfoKeyNameTransformer(client));
 
             if ("true".equals(client.getAttribute("saml.encrypt"))) {
                 ctx.getBuilder().encrypt(SamlProtocolUtils.getEncryptionKey(session, client));
@@ -413,6 +417,22 @@ public class WSFedLoginProtocol implements LoginProtocol {
     @Override
     public void close() {
         // Nothing to do
+    }
+
+    /**
+     * Resolves how the signature's KeyInfo should name the signing key, from the same client
+     * attribute Keycloak's SAML protocol uses and with the same default. Relying parties built on
+     * WIF, such as Dynamics 365, reject a signature carrying a KeyName they cannot resolve and
+     * need the attribute set to {@code NONE}; leaving the attribute unset keeps the behaviour a
+     * SAML client would get.
+     *
+     * @param client the relying party the token is being issued for
+     * @return the transformer named by the client, or Keycloak's default when unset or unknown
+     */
+    protected static XmlKeyInfoKeyNameTransformer keyInfoKeyNameTransformer(ClientModel client) {
+        return XmlKeyInfoKeyNameTransformer.from(
+                client.getAttribute(SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER),
+                RequestSecurityTokenResponseBuilder.DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER);
     }
 
     /**
