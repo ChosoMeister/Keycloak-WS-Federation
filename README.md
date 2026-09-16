@@ -115,6 +115,23 @@ keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
 
 Prebuilt release artifacts and `SHA256SUMS` are published on the [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) page. Verify the checksum before installing a downloaded JAR.
 
+### Upgrade notes
+
+Several corrections change how the extension responds to input it previously accepted. They are
+listed in full in [CHANGELOG.md](CHANGELOG.md); the ones that can stop a working deployment are:
+
+| Change | Who is affected |
+|---|---|
+| An assertion with no audience restriction is rejected | A broker whose external identity provider omits `AudienceRestriction` |
+| A response with more than one assertion is rejected | Nobody in normal operation; this was a signature wrapping vector |
+| A client not using the `wsfed` protocol cannot obtain a token | Anyone who was unintentionally driving an OIDC or SAML client through this endpoint |
+| An invalid `wreply` is an error rather than a fallback to the client base URL | Anyone relying on that fallback. An absent `wreply` still falls back |
+| `wfresh` is honoured | Relying parties that send `wfresh` and expected single sign-on regardless |
+
+None of these are configurable. They are security corrections, and the audience check in particular
+has no opt-out by design: an assertion that names no audience cannot be shown to have been issued
+for this relying party.
+
 ### Installation
 
 Copy the provider JAR into the Quarkus provider directory and rebuild Keycloak:
@@ -528,7 +545,8 @@ base64 that matches nothing.
 | `WSFED_TOKEN_FORMAT` | No | Overrides the client's own `SAML 1.1` / `SAML 2.0` setting |
 | `WSFED_LDAP_ALIAS` | Only with several LDAP providers | Name of the provider to attach the mappers to |
 | `WSFED_LDAP_UPN_ATTRIBUTE` | No | Source attribute for UPN; default `userPrincipalName` |
-| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for Name; default `msDS-PrincipalName` |
+| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for the Windows account name; default `msDS-PrincipalName` |
+| `WSFED_LDAP_NAME_ATTRIBUTE` | No | Source attribute for Name; defaults to the Windows account name, matching AD FS |
 | `WSFED_LDAP_SID_ATTRIBUTE` | No | Source attribute for the SID; default `objectSid` |
 
 The two token formats identify an attribute differently, so the mappers are written to match
@@ -756,6 +774,20 @@ keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
 ```
 
 فایل JAR آماده و `SHA256SUMS` در صفحه [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) منتشر می‌شوند. پیش از نصب JAR دانلودشده، checksum آن را بررسی کنید.
+
+### نکات ارتقا
+
+چند اصلاح، نحوه پاسخ افزونه به ورودی‌هایی را که پیش‌تر می‌پذیرفت تغییر می‌دهند. فهرست کامل در [CHANGELOG.md](CHANGELOG.md) است؛ مواردی که می‌توانند یک استقرار در حال کار را متوقف کنند:
+
+| تغییر | چه کسی متأثر می‌شود |
+|---|---|
+| Assertion بدون Audience Restriction رد می‌شود | Broker ی که IdP خارجی‌اش `AudienceRestriction` نمی‌فرستد |
+| پاسخ با بیش از یک Assertion رد می‌شود | در کارکرد عادی هیچ‌کس؛ این یک بردار حمله Signature Wrapping بود |
+| Client ی که از پروتکل `wsfed` استفاده نمی‌کند نمی‌تواند توکن بگیرد | کسی که ناخواسته Client های OIDC یا SAML را از این Endpoint عبور می‌داده |
+| `wreply` نامعتبر خطاست، نه بازگشت به Base URL کلاینت | کسی که به آن fallback تکیه کرده بوده. نبودِ `wreply` همچنان به Base URL برمی‌گردد |
+| `wfresh` اعمال می‌شود | Relying Party هایی که `wfresh` می‌فرستند و انتظار SSO داشتند |
+
+هیچ‌کدام از اینها قابل تنظیم نیستند. اینها اصلاحات امنیتی‌اند و به‌ویژه بررسی Audience عمداً راه خروج ندارد: Assertion ی که هیچ Audience ی را نام نمی‌برد، قابل اثبات نیست که برای این Relying Party صادر شده باشد.
 
 ### نصب
 
