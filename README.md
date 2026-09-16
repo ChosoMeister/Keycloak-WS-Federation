@@ -424,7 +424,10 @@ kcadm.sh update clients/<uuid> -r <realm> \
 | `NONE` | No `KeyName` element is emitted |
 | `CERT_SUBJECT` | `KeyName` holds the subject DN of the signing certificate |
 
-An unset or unrecognised value keeps the default, so upgrading changes nothing for existing clients.
+The value is matched exactly: `None`, `none` or a stray space is not recognised and leaves the
+default in place, which looks identical to never having set the attribute. The server logs a warning
+naming the client and the offending value when that happens. An unset value keeps the default, so
+upgrading changes nothing for existing clients.
 The signing certificate itself is always published in `KeyInfo` regardless, so a relying party can
 resolve the key from the certificate even when no `KeyName` is present.
 
@@ -1078,7 +1081,7 @@ kcadm.sh update clients/<uuid> -r <realm> \
 | `NONE` | هیچ عنصر `KeyName` ی تولید نمی‌شود |
 | `CERT_SUBJECT` | مقدار `KeyName` برابر Subject DN گواهی امضا است |
 
-مقدار تنظیم‌نشده یا ناشناخته به پیش‌فرض برمی‌گردد، بنابراین ارتقا چیزی را برای Client های موجود تغییر نمی‌دهد. گواهی امضا در هر حالت داخل `KeyInfo` منتشر می‌شود، پس Relying Party حتی در نبود `KeyName` می‌تواند کلید را از روی گواهی resolve کند.
+مقدار به‌صورت دقیق تطبیق داده می‌شود: `None`، `none` یا یک فاصله اضافه شناخته نمی‌شود و پیش‌فرض را دست‌نخورده می‌گذارد، که از بیرون دقیقاً شبیه تنظیم‌نکردن Attribute است. در این حالت سرور یک هشدار با نام Client و مقدار نادرست ثبت می‌کند. مقدار تنظیم‌نشده به پیش‌فرض برمی‌گردد، بنابراین ارتقا چیزی را برای Client های موجود تغییر نمی‌دهد. گواهی امضا در هر حالت داخل `KeyInfo` منتشر می‌شود، پس Relying Party حتی در نبود `KeyName` می‌تواند کلید را از روی گواهی resolve کند.
 
 > [!NOTE]
 > این مورد به Assertion های SAML 2.0 مربوط است. یک Assertion از نوع SAML 1.1 هرگز `KeyName` حمل نمی‌کند، چون مسیر امضایی که برای آن استفاده می‌شود راهی برای بیان آن ندارد. این Attribute برای Client های SAML 1.1 پذیرفته می‌شود ولی اثری ندارد و رفتار مؤثر آنجا از پیش همان `NONE` است.

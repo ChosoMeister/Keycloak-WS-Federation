@@ -74,6 +74,16 @@ class WSFedKeyInfoKeyNameTest {
     }
 
     @Test
+    void theMatchIsExactSoNearMissesDoNotTakeEffect() {
+        // These all leave the signature naming the key, which looks exactly like the attribute
+        // never having been set. The resolver logs a warning so the difference is visible.
+        for (String nearMiss : new String[]{"None", "none", " NONE ", "NONE ", "Cert_Subject"}) {
+            assertEquals(XmlKeyInfoKeyNameTransformer.KEY_ID, resolve(nearMiss),
+                    "'" + nearMiss + "' must not be treated as a recognised value");
+        }
+    }
+
+    @Test
     void noneProducesNoKeyNameAtAll() {
         // A null key name is what makes the signer omit the KeyName element entirely.
         assertNull(XmlKeyInfoKeyNameTransformer.NONE.getKeyName("some-kid", null));
