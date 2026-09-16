@@ -430,9 +430,27 @@ public class WSFedLoginProtocol implements LoginProtocol {
      * @return the transformer named by the client, or Keycloak's default when unset or unknown
      */
     protected static XmlKeyInfoKeyNameTransformer keyInfoKeyNameTransformer(ClientModel client) {
-        return XmlKeyInfoKeyNameTransformer.from(
-                client.getAttribute(SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER),
-                RequestSecurityTokenResponseBuilder.DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER);
+        String configured = client.getAttribute(SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER);
+
+        if (configured != null && !configured.isEmpty()) {
+            try {
+                return XmlKeyInfoKeyNameTransformer.valueOf(configured);
+            } catch (IllegalArgumentException e) {
+                // The match is exact, so "None", "none" or a stray space silently leaves the
+                // signature naming the key and looks identical to never having set the attribute
+                // at all. A relying party that rejects the token then gives no hint that the
+                // configuration, rather than the code, is what is wrong.
+                logger.warnf("Client %s sets %s to '%s', which is not one of %s. Falling back to %s,"
+                                + " so the signature will still carry a KeyName.",
+                        client.getClientId(),
+                        SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER,
+                        configured,
+                        java.util.Arrays.toString(XmlKeyInfoKeyNameTransformer.values()),
+                        RequestSecurityTokenResponseBuilder.DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER);
+            }
+        }
+
+        return RequestSecurityTokenResponseBuilder.DEFAULT_KEY_INFO_KEY_NAME_TRANSFORMER;
     }
 
     /**
