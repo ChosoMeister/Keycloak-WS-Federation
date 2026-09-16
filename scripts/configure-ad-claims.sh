@@ -29,11 +29,16 @@ LDAP_ALIAS="${WSFED_LDAP_ALIAS:-}"
 # the NT-style DOMAIN\user form; override it when a directory does not return it.
 LDAP_UPN_ATTRIBUTE="${WSFED_LDAP_UPN_ATTRIBUTE:-userPrincipalName}"
 LDAP_ACCOUNT_ATTRIBUTE="${WSFED_LDAP_ACCOUNT_ATTRIBUTE:-msDS-PrincipalName}"
+# AD FS sources the Name claim from the Windows account name, so that is the default here too.
+# A directory that wants a different value behind Name, a display name for instance, points this
+# at another attribute and a second LDAP mapper is created for it.
+LDAP_NAME_ATTRIBUTE="${WSFED_LDAP_NAME_ATTRIBUTE:-${LDAP_ACCOUNT_ATTRIBUTE}}"
 LDAP_SID_ATTRIBUTE="${WSFED_LDAP_SID_ATTRIBUTE:-objectSid}"
 
 # Keycloak user attributes used to carry the values between the two layers.
 USER_ATTR_UPN='upn'
 USER_ATTR_ACCOUNT='windowsAccountName'
+USER_ATTR_NAME='adName'
 USER_ATTR_SID='ad_primary_sid'
 
 CLAIM_UPN='http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn'
@@ -107,8 +112,8 @@ if [[ "${unmanaged_policy}" == "DISABLED" ]]; then
   cat >&2 <<EOF
 WARNING: realm ${WSFED_REALM} has unmanaged user attributes disabled.
 
-  The mappers below will be created, but ${USER_ATTR_UPN}, ${USER_ATTR_ACCOUNT} and
-  ${USER_ATTR_SID} will not be readable, so the assertion will carry no claims.
+  The mappers below will be created, but the user attributes they populate will not be
+  readable, so the assertion will carry no claims.
 
   Either enable unmanaged attributes for the realm:
 
@@ -188,6 +193,14 @@ upsert_ldap_mapper 'wsfed-upn'                  "${USER_ATTR_UPN}"     "${LDAP_U
 upsert_ldap_mapper 'wsfed-windows-account-name' "${USER_ATTR_ACCOUNT}" "${LDAP_ACCOUNT_ATTRIBUTE}"
 upsert_sid_mapper  'wsfed-primary-sid'          "${USER_ATTR_SID}"     "${LDAP_SID_ATTRIBUTE}"
 
+# When Name comes from the same directory attribute as the Windows account name, which is the
+# AD FS behaviour and the default, one mapper serves both and no second one is created.
+if [[ "${LDAP_NAME_ATTRIBUTE}" == "${LDAP_ACCOUNT_ATTRIBUTE}" ]]; then
+  USER_ATTR_NAME="${USER_ATTR_ACCOUNT}"
+else
+  upsert_ldap_mapper 'wsfed-name' "${USER_ATTR_NAME}" "${LDAP_NAME_ATTRIBUTE}"
+fi
+
 # --- WS-Federation protocol mappers ---------------------------------------------------------
 
 existing_protocol_mappers=$("${KCADM}" get "clients/${client_uuid}/protocol-mappers/models" \
@@ -232,8 +245,7 @@ upsert_protocol_mapper() {
 echo "WS-Federation client: ${WSFED_CLIENT_ID} (token format: ${TOKEN_FORMAT})"
 upsert_protocol_mapper 'upn'         "${USER_ATTR_UPN}"     "${CLAIM_UPN}"
 upsert_protocol_mapper 'primary sid'  "${USER_ATTR_SID}"     "${CLAIM_SID}"
-# AD FS sources the name claim from the Windows account name, so this is DOMAIN\user.
-upsert_protocol_mapper 'name'         "${USER_ATTR_ACCOUNT}" "${CLAIM_NAME}"
+upsert_protocol_mapper 'name'         "${USER_ATTR_NAME}"    "${CLAIM_NAME}"
 
 cat <<EOF
 
