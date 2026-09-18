@@ -143,6 +143,14 @@ public class SAML11Signature implements SAMLAbstractSignature {
                 dto.setX509Certificate(x509Certificate);
             }
 
+            // The transfer object carries no key name, so a SAML 1.1 signature never names the
+            // key however the client is configured. That suits WIF based relying parties, which
+            // reject a KeyName they cannot resolve, and it is the behaviour this path has always
+            // had. Saying so keeps an administrator from concluding the setting is broken.
+            if (keyName != null && logger.isDebugEnabled()) {
+                logger.debug("Ignoring key name '" + keyName + "': a SAML 1.1 signature carries no KeyName.");
+            }
+
             return XMLSignatureUtil.sign(dto, canonicalizationMethodType);
         }
         return XMLSignatureUtil.sign(doc, keyName, keyPair, digestMethod, signatureMethod, referenceURI, canonicalizationMethodType);
