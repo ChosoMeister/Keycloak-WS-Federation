@@ -30,11 +30,16 @@ import org.picketlink.identity.federation.core.wstrust.wrappers.RequestSecurityT
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 
+import org.keycloak.services.resources.RealmsResource;
+
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -87,6 +92,49 @@ public class WSTrustActiveService {
      */
     public static boolean isEnabled(RealmModel realm) {
         return Boolean.parseBoolean(realm.getAttribute(ENABLED_ATTRIBUTE));
+    }
+
+    /**
+     * Serves the WSDL describing the active endpoint, so a client can discover it the way it
+     * discovers AD FS rather than being pointed at the address by hand.
+     *
+     * <p>Routed from {@link WSFedService} so that it sits beside the protocol endpoint rather
+     * than beneath the active one, which is where a client looks for it.
+     *
+     * @return the metadata document, or 404 where the realm has not enabled the profile
+     */
+    public Response metadataExchange() {
+        if (!isEnabled(realm)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        try {
+            return Response.ok(metadataDocument(), MediaType.APPLICATION_XML_TYPE).build();
+        } catch (IOException e) {
+            logger.error("Could not read the WS-Trust metadata template", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    private String metadataDocument() throws IOException {
+        try (InputStream template = getClass().getClassLoader()
+                .getResourceAsStream("wsfed-ws-trust-mex-template.xml")) {
+            if (template == null) {
+                throw new IOException("wsfed-ws-trust-mex-template.xml is missing from the provider");
+            }
+            return new String(template.readAllBytes(), StandardCharsets.UTF_8)
+                    .replace("${wstrust.usernamemixed}", endpointAddress());
+        }
+    }
+
+    /**
+     * @return the absolute address of the active endpoint, as the caller reached this realm
+     */
+    String endpointAddress() {
+        return RealmsResource.protocolUrl(uriInfo())
+                .path(WSFedService.class, "activeRequestor")
+                .build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL)
+                .toString();
     }
 
     @POST

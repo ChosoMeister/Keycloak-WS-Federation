@@ -18,6 +18,7 @@
 package io.github.chosomeister.keycloak.protocol.wsfed.installation;
 
 import io.github.chosomeister.keycloak.protocol.wsfed.WSFedLoginProtocol;
+import io.github.chosomeister.keycloak.protocol.wsfed.WSTrustActiveService;
 import org.keycloak.Config;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.Algorithm;
@@ -111,7 +112,11 @@ public class WSFedIDPDescriptorClientInstallation implements ClientInstallationP
      * it will look for one and fail, so it is off unless a realm asks for it.
      */
     static String protocolSupportEnumeration(RealmModel realm) {
-        if (Boolean.parseBoolean(realm.getAttribute(ANNOUNCE_WS_TRUST_ATTRIBUTE))) {
+        // Announced when the realm actually serves the active profile, so the descriptor stops
+        // describing a capability that is not there. The attribute remains for a relying party
+        // that needs the namespaces present for its own reasons.
+        if (WSTrustActiveService.isEnabled(realm)
+                || Boolean.parseBoolean(realm.getAttribute(ANNOUNCE_WS_TRUST_ATTRIBUTE))) {
             return WS_TRUST_NS + " " + WS_TRUST_2005_NS + " " + WSFED_NS;
         }
         return WSFED_NS;
