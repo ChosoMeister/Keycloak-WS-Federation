@@ -33,6 +33,11 @@ previously accepted. Read them before upgrading a working deployment.
 
 ### Added
 
+- `wsfed.metadata.claim-types` and `wsfed.metadata.announce-ws-trust` realm attributes steer the
+  federation metadata. The claim types advertised are no longer fixed, and the WS-Trust namespaces
+  are no longer announced by default: this extension implements the passive requestor profile only,
+  and a client told otherwise looks for an active endpoint that does not exist.
+
 - Federation metadata publishes `fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, WS-Trust
   namespaces in `protocolSupportEnumeration`, and a service display name. Strict consumers such as
   the Dynamics 365 on-premises claims-based authentication wizard reject a descriptor without them.
