@@ -470,8 +470,19 @@ Failures come back as SOAP faults. They are deliberately coarse — a caller lea
 refused, not whether the user exists or which relying party is registered. Realm brute force
 protection applies to the endpoint, and each attempt is recorded as a login event.
 
-There is **no metadata exchange endpoint**. A client that insists on discovering the service
-through `/mex` is not supported yet and has to be pointed at the endpoint directly.
+A client that discovers the service rather than being pointed at it reads the WSDL from the
+metadata exchange endpoint, which answers under the same realm attribute:
+
+```text
+GET /realms/{realm}/protocol/wsfed/mex
+```
+
+It describes the SOAP 1.2 binding, the issue operation, and a policy asking for a `UsernameToken`
+over transport security, with the address of the active endpoint as the caller reached the realm.
+
+Turning the profile on also makes the federation metadata announce the WS-Trust namespaces, since
+at that point the claim is true. `wsfed.metadata.announce-ws-trust` remains for a relying party
+that needs them present without the active endpoint being served.
 
 #### Keycloak as a WS-Federation broker
 
@@ -1155,7 +1166,15 @@ POST /realms/{realm}/protocol/wsfed/usernamemixed
 
 خطاها به شکل SOAP Fault برمی‌گردند و عمداً کلی هستند: فراخوان می‌فهمد درخواست رد شده، نه اینکه کاربر وجود دارد یا کدام Relying Party ثبت شده است. محافظت Brute Force خود realm روی این Endpoint اعمال می‌شود و هر تلاش به‌عنوان یک Login Event ثبت می‌گردد.
 
-**Endpoint ی برای Metadata Exchange وجود ندارد.** کلاینتی که حتماً می‌خواهد سرویس را از طریق `/mex` کشف کند فعلاً پشتیبانی نمی‌شود و باید مستقیماً به آدرس Endpoint هدایت شود.
+کلاینتی که به‌جای دریافت مستقیم آدرس، سرویس را کشف می‌کند، WSDL را از Endpoint ی Metadata Exchange می‌خواند که با همان Attribute در دسترس قرار می‌گیرد:
+
+```text
+GET /realms/{realm}/protocol/wsfed/mex
+```
+
+این سند، Binding از نوع SOAP 1.2، عملیات Issue، و یک Policy که `UsernameToken` روی امنیت لایه انتقال می‌خواهد را توصیف می‌کند، به‌همراه آدرس Endpoint ی فعال همان‌طور که فراخوان به realm رسیده است.
+
+روشن کردن این پروفایل باعث می‌شود Federation Metadata هم Namespace های WS-Trust را اعلام کند، چون از آن لحظه این ادعا درست است. `wsfed.metadata.announce-ws-trust` برای Relying Party ای باقی می‌ماند که به حضور این Namespace ها نیاز دارد بدون آنکه Endpoint ی فعال سرو شود.
 
 #### استفاده از Keycloak به‌عنوان Broker
 

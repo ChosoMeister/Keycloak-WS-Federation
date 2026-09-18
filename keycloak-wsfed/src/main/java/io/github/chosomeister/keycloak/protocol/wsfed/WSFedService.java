@@ -112,6 +112,19 @@ public class WSFedService extends AuthorizationEndpointBase {
     }
 
     /**
+     * The WS-MetadataExchange document describing the active endpoint. It sits beside the protocol
+     * endpoint rather than beneath the active one, because that is where a client looks for it.
+     *
+     * @return the metadata document, or 404 where the realm has not enabled the profile
+     */
+    @GET
+    @Path("mex")
+    @Produces(MediaType.APPLICATION_XML)
+    public Response metadataExchange() {
+        return new WSTrustActiveService(session, realm, event).metadataExchange();
+    }
+
+    /**
      * Returns the federation metadata document identifying the endpoint address as a SecurityTokenService
      * (see http://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html
      * section 3.1.2.2 SecurityTokenServiceType).

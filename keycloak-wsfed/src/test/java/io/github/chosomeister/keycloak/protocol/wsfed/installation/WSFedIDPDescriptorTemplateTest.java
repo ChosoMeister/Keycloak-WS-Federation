@@ -139,6 +139,17 @@ class WSFedIDPDescriptorTemplateTest {
     }
 
     @Test
+    void enablingTheActiveEndpointAnnouncesWsTrustOnItsOwn() throws Exception {
+        // Once the realm actually serves WS-Trust, saying so is no longer a false claim, so it
+        // should not need a second attribute to be set alongside.
+        String announced = protocols(render(realm(Map.of(
+                io.github.chosomeister.keycloak.protocol.wsfed.WSTrustActiveService.ENABLED_ATTRIBUTE, "true"))));
+
+        assertTrue(announced.contains("http://docs.oasis-open.org/ws-sx/ws-trust/200512"), announced);
+        assertTrue(announced.contains(FED_NS), announced);
+    }
+
+    @Test
     void publishesTheSigningCertificateAndEndpoints() throws Exception {
         Document doc = render(realm(Map.of()));
 
