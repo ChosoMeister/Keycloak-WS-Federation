@@ -504,7 +504,18 @@ token types or claim types.
 
 `fed:ClaimTypesOffered` advertises what the service is capable of issuing. It is not a promise about
 any single token: the claims a relying party receives come from the protocol mappers on its own
-client, configured by the helper below.
+client, configured by the helper below. Two realm attributes steer the document:
+
+| Realm attribute | Default | Meaning |
+|---|---|---|
+| `wsfed.metadata.claim-types` | UPN, primary SID, Name | Whitespace or comma separated claim type URIs to advertise |
+| `wsfed.metadata.announce-ws-trust` | `false` | Whether `protocolSupportEnumeration` also lists the WS-Trust namespaces |
+
+WS-Trust is not announced by default, because this extension implements the **passive requestor
+profile only**. There is no active endpoint, no metadata exchange endpoint, and no SOAP surface. A
+client told that WS-Trust is available will look for an endpoint that does not exist; the Dynamics
+365 .NET SDK does exactly this. Turn the attribute on only if a relying party needs the namespaces
+present for its own reasons.
 
 The document is not signed. Relying parties that require signed metadata are not supported yet.
 

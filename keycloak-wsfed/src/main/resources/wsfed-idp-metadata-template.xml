@@ -6,7 +6,7 @@
 				  xmlns:auth="http://docs.oasis-open.org/wsfed/authorization/200706"
 				  xmlns:wsa="http://www.w3.org/2005/08/addressing">
 	<RoleDescriptor xsi:type="fed:SecurityTokenServiceType"
-					protocolSupportEnumeration="http://docs.oasis-open.org/ws-sx/ws-trust/200512 http://schemas.xmlsoap.org/ws/2005/02/trust http://docs.oasis-open.org/wsfed/federation/200706"
+					protocolSupportEnumeration="${idp.protocolSupportEnumeration}"
 					ServiceDisplayName="${idp.service.displayName}">
 		<KeyDescriptor use="signing">
 			<KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
@@ -22,19 +22,7 @@
 			<fed:TokenType Uri="urn:oasis:names:tc:SAML:2.0:assertion"/>
 		</fed:TokenTypesOffered>
 		<fed:ClaimTypesOffered>
-			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" Optional="true">
-				<auth:DisplayName>UPN</auth:DisplayName>
-				<auth:Description>The user principal name (UPN) of the user</auth:Description>
-			</auth:ClaimType>
-			<auth:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name" Optional="true">
-				<auth:DisplayName>Name</auth:DisplayName>
-				<auth:Description>The display name of the user</auth:Description>
-			</auth:ClaimType>
-			<auth:ClaimType Uri="http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid" Optional="true">
-				<auth:DisplayName>Primary SID</auth:DisplayName>
-				<auth:Description>The security identifier (SID) of the user account</auth:Description>
-			</auth:ClaimType>
-		</fed:ClaimTypesOffered>
+${idp.claim.types}		</fed:ClaimTypesOffered>
 		<fed:SecurityTokenServiceEndpoint>
 			<wsa:EndpointReference>
 				<wsa:Address>${idp.sso.sts}</wsa:Address>
