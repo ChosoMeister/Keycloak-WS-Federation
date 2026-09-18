@@ -101,6 +101,17 @@ public class WSFedService extends AuthorizationEndpointBase {
     }
 
     /**
+     * The active WS-Trust profile, for relying parties that authenticate without a browser. It
+     * answers only where a realm has turned it on; elsewhere the path does not resolve.
+     *
+     * @return the resource handling the request
+     */
+    @Path("usernamemixed")
+    public Object activeRequestor() {
+        return new WSTrustActiveService(session, realm, event);
+    }
+
+    /**
      * Returns the federation metadata document identifying the endpoint address as a SecurityTokenService
      * (see http://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html
      * section 3.1.2.2 SecurityTokenServiceType).

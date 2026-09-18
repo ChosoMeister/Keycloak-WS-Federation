@@ -29,6 +29,7 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
 import org.jboss.logging.Logger;
+import org.keycloak.common.VerificationException;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.httpclient.HttpClientProvider;
 import org.keycloak.crypto.Algorithm;
@@ -218,22 +219,14 @@ public class WSFedLoginProtocol implements LoginProtocol {
         String context = clientSession.getNote(WSFedConstants.WSFED_CONTEXT);
         userSession.setNote(WSFedConstants.WSFED_REALM, client.getClientId());
         try {
-            KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
-
             ctx.getBuilder().setRealm(clientSession.getClient().getClientId())
                     .setAction(WSFedConstants.WSFED_SIGNIN_ACTION)
                     .setDestination(clientSession.getRedirectUri())
                     .setContext(context)
                     .setTokenExpiration(realm.getAccessTokenLifespan())
-                    .setRequestIssuer(clientSession.getClient().getClientId())
-                    .setSigningKeyPair(new KeyPair((PublicKey)activeKey.getPublicKey(), (PrivateKey)activeKey.getPrivateKey()))
-                    .setSigningCertificate(activeKey.getCertificate())
-                    .setSigningKeyPairId(activeKey.getKid())
-                    .setKeyInfoKeyNameTransformer(keyInfoKeyNameTransformer(client));
+                    .setRequestIssuer(clientSession.getClient().getClientId());
 
-            if ("true".equals(client.getAttribute("saml.encrypt"))) {
-                ctx.getBuilder().encrypt(SamlProtocolUtils.getEncryptionKey(session, client));
-            }
+            configureTokenSecurity(session, realm, client, ctx.getBuilder());
 
             if (useJwt(client)) {
                 //JSON webtoken (OIDC) set in client config
@@ -304,7 +297,7 @@ public class WSFedLoginProtocol implements LoginProtocol {
             .build();
     }
 
-    public WsFedSAMLAssertionTokenFormat getSamlAssertionTokenFormat(ClientModel client) {
+    public static WsFedSAMLAssertionTokenFormat getSamlAssertionTokenFormat(ClientModel client) {
         String value = client.getAttribute(WSFED_SAML_ASSERTION_TOKEN_FORMAT);
         try {
             if (value != null)
@@ -421,6 +414,31 @@ public class WSFedLoginProtocol implements LoginProtocol {
     }
 
     /**
+     * Applies the signing and encryption settings a client asks for to a response builder. Both
+     * the passive requestor endpoint and the active WS-Trust endpoint issue the same kind of token
+     * for the same client, so they resolve these the same way rather than drifting apart.
+     *
+     * @param session the current Keycloak session
+     * @param realm the realm issuing the token
+     * @param client the relying party the token is for
+     * @param builder the response builder to configure
+     * @throws VerificationException when the client asks for encryption but its certificate cannot be read
+     */
+    public static void configureTokenSecurity(KeycloakSession session, RealmModel realm, ClientModel client,
+                                              RequestSecurityTokenResponseBuilder builder) throws VerificationException {
+        KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
+
+        builder.setSigningKeyPair(new KeyPair((PublicKey) activeKey.getPublicKey(), (PrivateKey) activeKey.getPrivateKey()))
+                .setSigningCertificate(activeKey.getCertificate())
+                .setSigningKeyPairId(activeKey.getKid())
+                .setKeyInfoKeyNameTransformer(keyInfoKeyNameTransformer(client));
+
+        if ("true".equals(client.getAttribute("saml.encrypt"))) {
+            builder.encrypt(SamlProtocolUtils.getEncryptionKey(session, client));
+        }
+    }
+
+    /**
      * A SAML 1.1 signature carries no KeyName whatever the client asks for, because the signing
      * path it goes through has no way to express one. That happens to be what WIF based relying
      * parties want, so the behaviour is left alone, but an administrator who deliberately set the
@@ -428,7 +446,7 @@ public class WSFedLoginProtocol implements LoginProtocol {
      *
      * @param client the relying party the token is being issued for
      */
-    protected void warnIfKeyNameSettingCannotApply(ClientModel client) {
+    protected static void warnIfKeyNameSettingCannotApply(ClientModel client) {
         String configured = client.getAttribute(SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER);
 
         if (configured != null && !configured.isEmpty()
