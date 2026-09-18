@@ -433,8 +433,9 @@ resolve the key from the certificate even when no `KeyName` is present.
 
 > [!NOTE]
 > This applies to SAML 2.0 assertions. A SAML 1.1 assertion never carries a `KeyName`, because the
-> signing path used for it has no way to express one. The attribute is accepted for SAML 1.1 clients
-> but changes nothing, and `NONE` is already the effective behaviour there.
+> signing path used for it has no way to express one, so `NONE` is already the effective behaviour
+> there. Setting the attribute to anything else on a SAML 1.1 client logs a warning saying it had no
+> effect, rather than leaving the discrepancy to be discovered against a relying party.
 
 #### Keycloak as a WS-Federation broker
 
@@ -1095,7 +1096,7 @@ kcadm.sh update clients/<uuid> -r <realm> \
 مقدار به‌صورت دقیق تطبیق داده می‌شود: `None`، `none` یا یک فاصله اضافه شناخته نمی‌شود و پیش‌فرض را دست‌نخورده می‌گذارد، که از بیرون دقیقاً شبیه تنظیم‌نکردن Attribute است. در این حالت سرور یک هشدار با نام Client و مقدار نادرست ثبت می‌کند. مقدار تنظیم‌نشده به پیش‌فرض برمی‌گردد، بنابراین ارتقا چیزی را برای Client های موجود تغییر نمی‌دهد. گواهی امضا در هر حالت داخل `KeyInfo` منتشر می‌شود، پس Relying Party حتی در نبود `KeyName` می‌تواند کلید را از روی گواهی resolve کند.
 
 > [!NOTE]
-> این مورد به Assertion های SAML 2.0 مربوط است. یک Assertion از نوع SAML 1.1 هرگز `KeyName` حمل نمی‌کند، چون مسیر امضایی که برای آن استفاده می‌شود راهی برای بیان آن ندارد. این Attribute برای Client های SAML 1.1 پذیرفته می‌شود ولی اثری ندارد و رفتار مؤثر آنجا از پیش همان `NONE` است.
+> این مورد به Assertion های SAML 2.0 مربوط است. یک Assertion از نوع SAML 1.1 هرگز `KeyName` حمل نمی‌کند، چون مسیر امضایی که برای آن استفاده می‌شود راهی برای بیان آن ندارد؛ بنابراین رفتار مؤثر آنجا از پیش همان `NONE` است. اگر روی یک Client از نوع SAML 1.1 مقدار دیگری تنظیم شود، یک هشدار ثبت می‌شود که می‌گوید این تنظیم اثری نداشته، تا این ناهماهنگی در برخورد با Relying Party کشف نشود.
 
 #### استفاده از Keycloak به‌عنوان Broker
 

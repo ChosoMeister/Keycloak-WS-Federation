@@ -256,6 +256,7 @@ public class WSFedLoginProtocol implements LoginProtocol {
                     ctx.setSamlAssertion(saml20Token);
                     ctx.getBuilder().setSamlToken(saml20Token);
                 } else if (tokenFormat==WsFedSAMLAssertionTokenFormat.SAML11_ASSERTION_TOKEN_FORMAT) {
+                    warnIfKeyNameSettingCannotApply(client);
                     SAML11AssertionType saml11Token = buildSAML11AssertionToken(ctx);
                     ctx.setSamlAssertion(saml11Token);
                     ctx.getBuilder().setSaml11Token(saml11Token);
@@ -417,6 +418,27 @@ public class WSFedLoginProtocol implements LoginProtocol {
     @Override
     public void close() {
         // Nothing to do
+    }
+
+    /**
+     * A SAML 1.1 signature carries no KeyName whatever the client asks for, because the signing
+     * path it goes through has no way to express one. That happens to be what WIF based relying
+     * parties want, so the behaviour is left alone, but an administrator who deliberately set the
+     * attribute deserves to know it had no part in the outcome.
+     *
+     * @param client the relying party the token is being issued for
+     */
+    protected void warnIfKeyNameSettingCannotApply(ClientModel client) {
+        String configured = client.getAttribute(SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER);
+
+        if (configured != null && !configured.isEmpty()
+                && !XmlKeyInfoKeyNameTransformer.NONE.name().equals(configured)) {
+            logger.warnf("Client %s sets %s to '%s', but a SAML 1.1 assertion never carries a"
+                            + " KeyName. The setting has no effect for this token format.",
+                    client.getClientId(),
+                    SamlConfigAttributes.SAML_SERVER_SIGNATURE_KEYINFO_KEY_NAME_TRANSFORMER,
+                    configured);
+        }
     }
 
     /**
