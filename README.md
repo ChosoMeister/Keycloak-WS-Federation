@@ -437,6 +437,42 @@ resolve the key from the certificate even when no `KeyName` is present.
 > there. Setting the attribute to anything else on a SAML 1.1 client logs a warning saying it had no
 > effect, rather than leaving the discrepancy to be discovered against a relying party.
 
+#### Active WS-Trust for clients without a browser
+
+Some relying parties authenticate without a browser and cannot use the passive requestor flow. The
+Dynamics 365 .NET SDK is one: it signs in with a username and password over SOAP. For those, the
+realm can expose the active WS-Trust profile:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.enabled"=true'
+```
+
+```text
+POST /realms/{realm}/protocol/wsfed/usernamemixed
+```
+
+The endpoint takes a WS-Trust 1.3 `RequestSecurityToken` in a SOAP 1.2 envelope, with the
+credentials in a `wsse:UsernameToken` and the relying party named by `wsp:AppliesTo`. It answers
+with a `RequestSecurityTokenResponseCollection` carrying the same signed token the browser flow
+issues, and echoes the request's `MessageID` in `wsa:RelatesTo`.
+
+> [!IMPORTANT]
+> It is off unless a realm turns it on, and should stay off where nothing needs it. Unlike the
+> passive endpoint it accepts a password directly, so enabling it widens what is exposed. Only
+> `PasswordText` is accepted, over HTTPS where the realm requires it; a digested password is
+> refused rather than being treated as a password.
+
+Everything about the token comes from the relying party's own client, exactly as in the browser
+flow: which claims it carries, whether it is SAML 1.1 or 2.0, how the signature names the key, and
+whether it is encrypted. A client configured once behaves the same through both endpoints.
+
+Failures come back as SOAP faults. They are deliberately coarse — a caller learns the request was
+refused, not whether the user exists or which relying party is registered. Realm brute force
+protection applies to the endpoint, and each attempt is recorded as a login event.
+
+There is **no metadata exchange endpoint**. A client that insists on discovering the service
+through `/mex` is not supported yet and has to be pointed at the endpoint directly.
+
 #### Keycloak as a WS-Federation broker
 
 In this mode, Keycloak redirects its users to an external WS-Federation IdP such as AD FS, consumes the signed response, and links or imports the external identity.
@@ -1097,6 +1133,29 @@ kcadm.sh update clients/<uuid> -r <realm> \
 
 > [!NOTE]
 > این مورد به Assertion های SAML 2.0 مربوط است. یک Assertion از نوع SAML 1.1 هرگز `KeyName` حمل نمی‌کند، چون مسیر امضایی که برای آن استفاده می‌شود راهی برای بیان آن ندارد؛ بنابراین رفتار مؤثر آنجا از پیش همان `NONE` است. اگر روی یک Client از نوع SAML 1.1 مقدار دیگری تنظیم شود، یک هشدار ثبت می‌شود که می‌گوید این تنظیم اثری نداشته، تا این ناهماهنگی در برخورد با Relying Party کشف نشود.
+
+#### WS-Trust فعال برای کلاینت‌های بدون مرورگر
+
+برخی Relying Party ها بدون مرورگر احراز هویت می‌کنند و نمی‌توانند از جریان Passive استفاده کنند. SDK دات‌نت Dynamics 365 یکی از آن‌هاست و با نام کاربری و رمز روی SOAP وارد می‌شود. برای این موارد، realm می‌تواند پروفایل فعال WS-Trust را در دسترس بگذارد:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.enabled"=true'
+```
+
+```text
+POST /realms/{realm}/protocol/wsfed/usernamemixed
+```
+
+این Endpoint یک `RequestSecurityToken` از نوع WS-Trust 1.3 را داخل یک پاکت SOAP 1.2 می‌پذیرد، با اعتبارنامه در `wsse:UsernameToken` و Relying Party مشخص‌شده در `wsp:AppliesTo`. پاسخ یک `RequestSecurityTokenResponseCollection` است که همان توکن امضاشده‌ی جریان مرورگری را حمل می‌کند و `MessageID` درخواست را در `wsa:RelatesTo` بازتاب می‌دهد.
+
+> [!IMPORTANT]
+> این Endpoint تا وقتی realm روشنش نکند خاموش است و جایی که چیزی به آن نیاز ندارد باید خاموش بماند. برخلاف Endpoint ی Passive، رمز را مستقیماً می‌پذیرد و روشن کردنش سطح در معرض دید را افزایش می‌دهد. فقط `PasswordText` پذیرفته می‌شود، روی HTTPS در صورتی که realm الزام کرده باشد؛ رمز Digest شده رد می‌شود و به‌عنوان رمز در نظر گرفته نمی‌شود.
+
+همه‌چیز درباره توکن از خود Client مربوط به Relying Party می‌آید، دقیقاً مثل جریان مرورگری: اینکه چه Claim هایی دارد، SAML 1.1 است یا 2.0، امضا کلید را چطور نام می‌برد، و رمزنگاری می‌شود یا نه. یک Client که یک بار پیکربندی شود، از هر دو Endpoint رفتار یکسانی دارد.
+
+خطاها به شکل SOAP Fault برمی‌گردند و عمداً کلی هستند: فراخوان می‌فهمد درخواست رد شده، نه اینکه کاربر وجود دارد یا کدام Relying Party ثبت شده است. محافظت Brute Force خود realm روی این Endpoint اعمال می‌شود و هر تلاش به‌عنوان یک Login Event ثبت می‌گردد.
+
+**Endpoint ی برای Metadata Exchange وجود ندارد.** کلاینتی که حتماً می‌خواهد سرویس را از طریق `/mex` کشف کند فعلاً پشتیبانی نمی‌شود و باید مستقیماً به آدرس Endpoint هدایت شود.
 
 #### استفاده از Keycloak به‌عنوان Broker
 

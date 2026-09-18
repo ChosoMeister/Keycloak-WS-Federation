@@ -33,6 +33,12 @@ previously accepted. Read them before upgrading a working deployment.
 
 ### Added
 
+- An active WS-Trust endpoint at `/realms/{realm}/protocol/wsfed/usernamemixed`, for relying
+  parties that authenticate without a browser. It takes a WS-Trust 1.3 RequestSecurityToken in a
+  SOAP envelope with a UsernameToken and issues the same signed token the passive flow does. Off
+  unless a realm sets `wsfed.ws-trust.enabled`, since it accepts a password directly. There is no
+  metadata exchange endpoint yet.
+
 - `wsfed.metadata.claim-types` and `wsfed.metadata.announce-ws-trust` realm attributes steer the
   federation metadata. The claim types advertised are no longer fixed, and the WS-Trust namespaces
   are no longer announced by default: this extension implements the passive requestor profile only,
