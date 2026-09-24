@@ -223,7 +223,7 @@ public class WSFedLoginProtocol implements LoginProtocol {
                     .setAction(WSFedConstants.WSFED_SIGNIN_ACTION)
                     .setDestination(clientSession.getRedirectUri())
                     .setContext(context)
-                    .setTokenExpiration(realm.getAccessTokenLifespan())
+                    .setTokenExpiration(io.github.chosomeister.keycloak.protocol.wsfed.builders.WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realm, client))
                     .setRequestIssuer(clientSession.getClient().getClientId());
 
             configureTokenSecurity(session, realm, client, ctx.getBuilder());

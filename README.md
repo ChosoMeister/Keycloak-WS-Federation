@@ -484,6 +484,34 @@ Turning the profile on also makes the federation metadata announce the WS-Trust 
 at that point the claim is true. `wsfed.metadata.announce-ws-trust` remains for a relying party
 that needs them present without the active endpoint being served.
 
+#### Token lifetime
+
+A WS-Federation token carries three validity windows, and a relying party such as Dynamics 365 ties
+its session to the **shortest** of them:
+
+| Window | Default |
+|---|---|
+| `saml:Conditions` | realm access code lifespan, **60 seconds** by default |
+| `saml:SubjectConfirmationData` | realm access token lifespan, 5 minutes by default |
+| `wst:Lifetime` in the response | realm access token lifespan, 5 minutes by default |
+
+The 60 second condition window is Keycloak's own SAML default, and it is short enough that a user is
+signed out of the relying party a minute after signing in. Set the lifespan on the client, through
+the same attribute Keycloak's SAML protocol uses:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> -s 'attributes."saml.assertion.lifespan"=3600'
+```
+
+A positive number of seconds replaces all three windows at once, on both the browser flow and the
+active WS-Trust endpoint. Extending only the assertion would leave the `wst:Lifetime` as the
+shortest window, and the relying party would still end the session there. An unset value, zero, or
+anything that is not a number leaves the realm defaults in place, so upgrading changes nothing for
+a client that did not ask.
+
+Each window begins at the moment of issue. If the relying party's clock runs behind Keycloak's, a
+token can arrive before its own start time and be rejected, so keep both hosts synchronised with NTP.
+
 #### Keycloak as a WS-Federation broker
 
 In this mode, Keycloak redirects its users to an external WS-Federation IdP such as AD FS, consumes the signed response, and links or imports the external identity.
@@ -1175,6 +1203,26 @@ GET /realms/{realm}/protocol/wsfed/mex
 این سند، Binding از نوع SOAP 1.2، عملیات Issue، و یک Policy که `UsernameToken` روی امنیت لایه انتقال می‌خواهد را توصیف می‌کند، به‌همراه آدرس Endpoint ی فعال همان‌طور که فراخوان به realm رسیده است.
 
 روشن کردن این پروفایل باعث می‌شود Federation Metadata هم Namespace های WS-Trust را اعلام کند، چون از آن لحظه این ادعا درست است. `wsfed.metadata.announce-ws-trust` برای Relying Party ای باقی می‌ماند که به حضور این Namespace ها نیاز دارد بدون آنکه Endpoint ی فعال سرو شود.
+
+#### طول عمر توکن
+
+یک توکن WS-Federation سه پنجره‌ی اعتبار دارد و Relying Party ای مثل Dynamics 365 طول سشن خود را به **کوتاه‌ترین** آن‌ها گره می‌زند:
+
+| پنجره | پیش‌فرض |
+|---|---|
+| `saml:Conditions` | Access Code Lifespan ی realm، به‌طور پیش‌فرض **۶۰ ثانیه** |
+| `saml:SubjectConfirmationData` | Access Token Lifespan ی realm، به‌طور پیش‌فرض ۵ دقیقه |
+| `wst:Lifetime` در پاسخ | Access Token Lifespan ی realm، به‌طور پیش‌فرض ۵ دقیقه |
+
+پنجره‌ی ۶۰ ثانیه‌ای Conditions پیش‌فرض خود SAML در Keycloak است و آن‌قدر کوتاه است که کاربر یک دقیقه بعد از ورود از Relying Party خارج می‌شود. طول عمر را روی Client تنظیم کنید، با همان Attribute ی که پروتکل SAML خود Keycloak استفاده می‌کند:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> -s 'attributes."saml.assertion.lifespan"=3600'
+```
+
+یک عدد مثبت بر حسب ثانیه هر سه پنجره را هم‌زمان جایگزین می‌کند، هم در جریان مرورگری و هم در Endpoint ی WS-Trust فعال. بلند کردن فقط Assertion باعث می‌شد `wst:Lifetime` کوتاه‌ترین پنجره بماند و Relying Party همچنان سشن را آنجا تمام کند. مقدار تنظیم‌نشده، صفر، یا هر چیزی که عدد نباشد پیش‌فرض‌های realm را دست‌نخورده می‌گذارد، پس ارتقا چیزی را برای Client ی که درخواست نکرده تغییر نمی‌دهد.
+
+هر پنجره از لحظه‌ی صدور شروع می‌شود. اگر ساعت Relying Party از Keycloak عقب باشد، توکن ممکن است قبل از زمان شروع خودش برسد و رد شود؛ پس هر دو میزبان را با NTP همگام نگه دارید.
 
 #### استفاده از Keycloak به‌عنوان Broker
 
