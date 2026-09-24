@@ -61,6 +61,12 @@ previously accepted. Read them before upgrading a working deployment.
 
 ### Fixed
 
+- The token lifetime could not be changed, and its shortest window was 60 seconds. A relying party
+  such as Dynamics 365 ties its session to the shortest validity in the token, so users were signed
+  out a minute after signing in. `saml.assertion.lifespan` is now honoured with the same meaning as
+  in Keycloak's SAML protocol, and replaces the condition window, the subject confirmation window
+  and the WS-Trust `Lifetime` together. Unset, the realm defaults apply exactly as before.
+
 - The admin console crashed with `Cannot read properties of undefined (reading 'helpText')` on the
   dedicated client scope page of any `wsfed` client. Nine of the twelve built-in mappers referenced
   mapper types that were not registered for the protocol.

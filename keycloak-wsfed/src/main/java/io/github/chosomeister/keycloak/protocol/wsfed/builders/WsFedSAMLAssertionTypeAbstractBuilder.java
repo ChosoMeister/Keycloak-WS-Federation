@@ -18,10 +18,13 @@
 
 package io.github.chosomeister.keycloak.protocol.wsfed.builders;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticatedClientSessionModel;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.protocol.saml.SamlConfigAttributes;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.services.managers.ClientSessionCode;
 import org.keycloak.services.resources.RealmsResource;
@@ -35,6 +38,8 @@ import jakarta.ws.rs.core.UriInfo;
  */
 
 public abstract class WsFedSAMLAssertionTypeAbstractBuilder<T extends WsFedSAMLAssertionTypeAbstractBuilder> {
+    private static final Logger logger = Logger.getLogger(WsFedSAMLAssertionTypeAbstractBuilder.class);
+
     public static final String WSFED_NAME_ID = "WSFED_NAME_ID";
     public static final String WSFED_NAME_ID_FORMAT = "WSFED_NAME_ID_FORMAT";
     public static final String SAML_NAME_ID_FORMAT_ATTRIBUTE = "saml_name_id_format";
@@ -103,6 +108,49 @@ public abstract class WsFedSAMLAssertionTypeAbstractBuilder<T extends WsFedSAMLA
     public T setUriInfo(UriInfo uriInfo) {
         this.uriInfo = uriInfo;
         return getThis();
+    }
+
+    /**
+     * Reads the lifespan a client sets for the assertions issued to it, from the same attribute and
+     * with the same meaning as Keycloak's SAML protocol: a positive number of seconds replaces the
+     * realm defaults, anything else leaves them alone.
+     *
+     * <p>Unset, the assertion's conditions follow the realm's access code lifespan, which is 60
+     * seconds by default. That is Keycloak's own SAML default too, and it is short enough to be a
+     * problem: a relying party such as Dynamics 365 ties its session to the shortest validity in
+     * the token, and so signs the user out a minute after they sign in.
+     *
+     * @param client the relying party the assertion is for
+     * @return the configured lifespan in seconds, or -1 when the client does not set one
+     */
+    public static int configuredAssertionLifespan(ClientModel client) {
+        String configured = client.getAttribute(SamlConfigAttributes.SAML_ASSERTION_LIFESPAN);
+        if (configured == null || configured.isBlank()) {
+            return -1;
+        }
+
+        try {
+            int lifespan = Integer.parseInt(configured.trim());
+            return lifespan > 0 ? lifespan : -1;
+        } catch (NumberFormatException e) {
+            logger.warnf("Client %s sets %s to '%s', which is not a number of seconds. Using the realm defaults.",
+                    client.getClientId(), SamlConfigAttributes.SAML_ASSERTION_LIFESPAN, configured);
+            return -1;
+        }
+    }
+
+    /**
+     * The validity of the token as a whole, used for the WS-Trust Lifetime element of the response.
+     * It follows the configured assertion lifespan when there is one, so that a relying party
+     * reading the shortest window in the token does not find a shorter one here.
+     *
+     * @param realm the issuing realm
+     * @param client the relying party the token is for
+     * @return the token lifespan in seconds
+     */
+    public static int tokenLifespan(RealmModel realm, ClientModel client) {
+        int configured = configuredAssertionLifespan(client);
+        return configured > 0 ? configured : realm.getAccessTokenLifespan();
     }
 
     protected String getResponseIssuer(RealmModel realm) {

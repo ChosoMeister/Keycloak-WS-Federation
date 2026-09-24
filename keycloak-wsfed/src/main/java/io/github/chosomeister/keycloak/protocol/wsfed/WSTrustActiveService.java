@@ -313,7 +313,7 @@ public class WSTrustActiveService {
         RequestSecurityTokenResponseBuilder builder = new RequestSecurityTokenResponseBuilder();
         builder.setRealm(client.getClientId())
                 .setRequestIssuer(client.getClientId())
-                .setTokenExpiration(realm.getAccessTokenLifespan());
+                .setTokenExpiration(io.github.chosomeister.keycloak.protocol.wsfed.builders.WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realm, client));
 
         WSFedLoginProtocol.configureTokenSecurity(session, realm, client, builder);
 
