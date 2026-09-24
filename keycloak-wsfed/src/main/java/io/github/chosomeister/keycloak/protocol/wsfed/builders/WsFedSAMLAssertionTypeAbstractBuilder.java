@@ -19,11 +19,13 @@
 package io.github.chosomeister.keycloak.protocol.wsfed.builders;
 
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.utils.SessionExpirationUtils;
 import org.keycloak.protocol.saml.SamlConfigAttributes;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.services.managers.ClientSessionCode;
@@ -140,17 +142,80 @@ public abstract class WsFedSAMLAssertionTypeAbstractBuilder<T extends WsFedSAMLA
     }
 
     /**
+     * Client attribute that bounds the token's validity by the user's Keycloak session instead of
+     * the realm's token defaults, so it is governed by the session settings an administrator
+     * already manages in the console.
+     */
+    public static final String LIFESPAN_FROM_SESSION_ATTRIBUTE = "wsfed.token.lifespan.from-session";
+
+    /**
+     * How long the user's Keycloak session would last from now if the user did nothing further:
+     * the earlier of its idle timeout and whatever remains of its maximum lifespan.
+     *
+     * <p>The token is bounded by that, never longer, so a relying party cannot keep a user signed
+     * in after Keycloak has ended their session. While the user stays active the Keycloak session
+     * keeps extending; when the token lapses the relying party sends the browser back, the live
+     * session answers without asking for a password, and a fresh token is issued.
+     *
+     * <p>The computation is Keycloak's own, so realm settings, per-client session overrides and
+     * remember-me are all accounted for exactly as Keycloak accounts for them when it ends a session.
+     *
+     * @return the remaining lifespan in seconds, or -1 when the session sets no bound
+     */
+    public static int sessionBoundLifespan(RealmModel realm, ClientModel client, UserSessionModel userSession) {
+        if (userSession == null) {
+            return -1;
+        }
+
+        long now = Time.currentTimeMillis();
+        boolean rememberMe = userSession.isRememberMe();
+
+        long idleEnd = SessionExpirationUtils.calculateClientSessionIdleTimestamp(
+                false, rememberMe, now, realm, client);
+        long maxEnd = SessionExpirationUtils.calculateClientSessionMaxLifespanTimestamp(
+                false, rememberMe, now, userSession.getStarted() * 1000L, realm, client);
+
+        long end = -1;
+        for (long candidate : new long[]{idleEnd, maxEnd}) {
+            if (candidate > 0 && (end < 0 || candidate < end)) {
+                end = candidate;
+            }
+        }
+
+        if (end <= now) {
+            return -1;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, (end - now) / 1000L);
+    }
+
+    /**
+     * The lifespan to give the assertion, in order of precedence: an explicit
+     * {@code saml.assertion.lifespan} on the client, then the Keycloak session when the client asks
+     * for that, then nothing, which leaves the realm defaults in place.
+     *
+     * @return the lifespan in seconds, or -1 when the realm defaults apply
+     */
+    public static int effectiveAssertionLifespan(RealmModel realm, ClientModel client, UserSessionModel userSession) {
+        int explicit = configuredAssertionLifespan(client);
+        if (explicit > 0) {
+            return explicit;
+        }
+        if (Boolean.parseBoolean(client.getAttribute(LIFESPAN_FROM_SESSION_ATTRIBUTE))) {
+            return sessionBoundLifespan(realm, client, userSession);
+        }
+        return -1;
+    }
+
+    /**
      * The validity of the token as a whole, used for the WS-Trust Lifetime element of the response.
-     * It follows the configured assertion lifespan when there is one, so that a relying party
+     * It follows the assertion whenever the assertion lifespan is set, so that a relying party
      * reading the shortest window in the token does not find a shorter one here.
      *
-     * @param realm the issuing realm
-     * @param client the relying party the token is for
      * @return the token lifespan in seconds
      */
-    public static int tokenLifespan(RealmModel realm, ClientModel client) {
-        int configured = configuredAssertionLifespan(client);
-        return configured > 0 ? configured : realm.getAccessTokenLifespan();
+    public static int tokenLifespan(RealmModel realm, ClientModel client, UserSessionModel userSession) {
+        int lifespan = effectiveAssertionLifespan(realm, client, userSession);
+        return lifespan > 0 ? lifespan : realm.getAccessTokenLifespan();
     }
 
     protected String getResponseIssuer(RealmModel realm) {

@@ -47,9 +47,9 @@ public class WSFedSAML2AssertionTypeBuilder extends WsFedSAMLAssertionTypeAbstra
         clientSession.setNote(WSFED_NAME_ID, nameId);
         clientSession.setNote(WSFED_NAME_ID_FORMAT, nameIdFormat);
 
-        // Mirrors Keycloak's SAML protocol: a configured lifespan replaces both windows, and
-        // without one the realm defaults apply exactly as they always have.
-        int lifespan = configuredAssertionLifespan(clientSession.getClient());
+        // A configured lifespan, or the Keycloak session when the client asks for that, replaces
+        // both windows; without either the realm defaults apply exactly as they always have.
+        int lifespan = effectiveAssertionLifespan(realm, clientSession.getClient(), userSession);
 
         SAML2AssertionTypeBuilder builder = new SAML2AssertionTypeBuilder();
         builder.issuer(responseIssuer)
