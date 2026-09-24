@@ -19,9 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class AssertionLifespanTest {
 
     private static ClientModel client(String lifespan) {
+        return client(lifespan, null);
+    }
+
+    private static ClientModel client(String lifespan, String fromSession) {
         Map<String, String> attributes = new HashMap<>();
         if (lifespan != null) {
             attributes.put(SamlConfigAttributes.SAML_ASSERTION_LIFESPAN, lifespan);
+        }
+        if (fromSession != null) {
+            attributes.put(WsFedSAMLAssertionTypeAbstractBuilder.LIFESPAN_FROM_SESSION_ATTRIBUTE, fromSession);
         }
         return (ClientModel) Proxy.newProxyInstance(ClientModel.class.getClassLoader(),
                 new Class<?>[]{ClientModel.class}, (proxy, method, args) -> switch (method.getName()) {
@@ -48,7 +55,7 @@ class AssertionLifespanTest {
         // So that upgrading changes nothing for a client that never asked for a different window.
         assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.configuredAssertionLifespan(client(null)));
         assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.configuredAssertionLifespan(client("")));
-        assertEquals(300, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client(null)));
+        assertEquals(300, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client(null), null));
     }
 
     @Test
@@ -61,7 +68,7 @@ class AssertionLifespanTest {
     void theWsTrustLifetimeFollowsTheAssertionSoNeitherIsShorter() {
         // Extending the assertion alone would leave the RSTR Lifetime as the shortest window, and the
         // relying party would still end the session there.
-        assertEquals(3600, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client("3600")));
+        assertEquals(3600, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client("3600"), null));
     }
 
     @Test
@@ -69,6 +76,30 @@ class AssertionLifespanTest {
         assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.configuredAssertionLifespan(client("0")));
         assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.configuredAssertionLifespan(client("-60")));
         assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.configuredAssertionLifespan(client("1h")));
-        assertEquals(300, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client("1h")));
+        assertEquals(300, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realmWithTokenLifespan(300), client("1h"), null));
+    }
+
+    @Test
+    void anExplicitLifespanTakesPrecedenceOverTheSession() {
+        // An administrator who sets a number means that number, whatever the session would allow.
+        assertEquals(600, WsFedSAMLAssertionTypeAbstractBuilder.effectiveAssertionLifespan(
+                realmWithTokenLifespan(300), client("600", "true"), null));
+    }
+
+    @Test
+    void theSessionIsFollowedOnlyWhenTheClientAsksForIt() {
+        // Following the session is opt in, so a client that never asked keeps the realm defaults.
+        assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.effectiveAssertionLifespan(
+                realmWithTokenLifespan(300), client(null, null), null));
+        assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.effectiveAssertionLifespan(
+                realmWithTokenLifespan(300), client(null, "false"), null));
+    }
+
+    @Test
+    void withoutASessionToFollowTheRealmDefaultsApply() {
+        assertEquals(-1, WsFedSAMLAssertionTypeAbstractBuilder.effectiveAssertionLifespan(
+                realmWithTokenLifespan(300), client(null, "true"), null));
+        assertEquals(300, WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(
+                realmWithTokenLifespan(300), client(null, "true"), null));
     }
 }

@@ -507,7 +507,27 @@ A positive number of seconds replaces all three windows at once, on both the bro
 active WS-Trust endpoint. Extending only the assertion would leave the `wst:Lifetime` as the
 shortest window, and the relying party would still end the session there. An unset value, zero, or
 anything that is not a number leaves the realm defaults in place, so upgrading changes nothing for
-a client that did not ask.
+a client that did not ask. Keycloak merges client attributes on update, so to remove a value set it
+to an empty string rather than leaving it out.
+
+The admin console does not offer this field for `wsfed` clients, so it is set through `kcadm` or
+the Admin REST API. To manage the lifetime from the console instead, let the client follow the
+user's Keycloak session:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> -s 'attributes."wsfed.token.lifespan.from-session"=true'
+```
+
+The token then lasts as long as the user's Keycloak session would last if the user did nothing
+further — the earlier of **SSO Session Idle** and what remains of **SSO Session Max**, both under
+**Realm settings → Sessions**. Changing those in the console changes the next token issued, with
+nothing to keep in sync. The token never outlives the Keycloak session; while the user stays active
+the session keeps extending, and when a token lapses the relying party sends the browser back, the
+live session answers without a password prompt, and a fresh token is issued. The computation is
+Keycloak's own, so per-client session overrides and remember-me apply as they do everywhere else.
+
+An explicit `saml.assertion.lifespan` still takes precedence. With neither set, the realm defaults
+apply as before.
 
 Each window begins at the moment of issue. If the relying party's clock runs behind Keycloak's, a
 token can arrive before its own start time and be rejected, so keep both hosts synchronised with NTP.
@@ -1220,7 +1240,17 @@ GET /realms/{realm}/protocol/wsfed/mex
 kcadm.sh update clients/<uuid> -r <realm> -s 'attributes."saml.assertion.lifespan"=3600'
 ```
 
-یک عدد مثبت بر حسب ثانیه هر سه پنجره را هم‌زمان جایگزین می‌کند، هم در جریان مرورگری و هم در Endpoint ی WS-Trust فعال. بلند کردن فقط Assertion باعث می‌شد `wst:Lifetime` کوتاه‌ترین پنجره بماند و Relying Party همچنان سشن را آنجا تمام کند. مقدار تنظیم‌نشده، صفر، یا هر چیزی که عدد نباشد پیش‌فرض‌های realm را دست‌نخورده می‌گذارد، پس ارتقا چیزی را برای Client ی که درخواست نکرده تغییر نمی‌دهد.
+یک عدد مثبت بر حسب ثانیه هر سه پنجره را هم‌زمان جایگزین می‌کند، هم در جریان مرورگری و هم در Endpoint ی WS-Trust فعال. بلند کردن فقط Assertion باعث می‌شد `wst:Lifetime` کوتاه‌ترین پنجره بماند و Relying Party همچنان سشن را آنجا تمام کند. مقدار تنظیم‌نشده، صفر، یا هر چیزی که عدد نباشد پیش‌فرض‌های realm را دست‌نخورده می‌گذارد، پس ارتقا چیزی را برای Client ی که درخواست نکرده تغییر نمی‌دهد. Keycloak هنگام به‌روزرسانی Attribute های Client را merge می‌کند؛ برای برداشتن یک مقدار آن را رشته‌ی خالی بگذارید، نه اینکه حذفش کنید.
+
+کنسول مدیریت این فیلد را برای Client های `wsfed` نشان نمی‌دهد، پس از طریق `kcadm` یا Admin REST API تنظیم می‌شود. برای اینکه طول عمر از خود کنسول مدیریت شود، Client را به دنبال‌کردن سشن Keycloak کاربر تنظیم کنید:
+
+```bash
+kcadm.sh update clients/<uuid> -r <realm> -s 'attributes."wsfed.token.lifespan.from-session"=true'
+```
+
+از آن پس توکن به اندازه‌ای دوام می‌آورد که سشن Keycloak کاربر در صورت بی‌کار ماندن او دوام می‌آورد — کوتاه‌ترِ **SSO Session Idle** و باقی‌مانده‌ی **SSO Session Max**، هر دو در **Realm settings → Sessions**. تغییر آن‌ها در کنسول، توکن بعدی را تغییر می‌دهد و چیزی برای همگام نگه‌داشتن نمی‌ماند. توکن هرگز از سشن Keycloak بیشتر عمر نمی‌کند؛ تا وقتی کاربر فعال است سشن تمدید می‌شود، و وقتی توکن منقضی شد Relying Party مرورگر را برمی‌گرداند، سشن زنده بدون پرسیدن رمز پاسخ می‌دهد و توکن تازه صادر می‌شود. محاسبه همان محاسبه‌ی خود Keycloak است، پس override های سطح Client و remember-me مثل هر جای دیگر اعمال می‌شوند.
+
+`saml.assertion.lifespan` ی صریح همچنان اولویت دارد. اگر هیچ‌کدام تنظیم نشده باشد، پیش‌فرض‌های realm مثل قبل اعمال می‌شوند.
 
 هر پنجره از لحظه‌ی صدور شروع می‌شود. اگر ساعت Relying Party از Keycloak عقب باشد، توکن ممکن است قبل از زمان شروع خودش برسد و رد شود؛ پس هر دو میزبان را با NTP همگام نگه دارید.
 

@@ -33,6 +33,12 @@ previously accepted. Read them before upgrading a working deployment.
 
 ### Added
 
+- `wsfed.token.lifespan.from-session` lets a client's tokens follow the user's Keycloak session:
+  the earlier of SSO Session Idle and the remainder of SSO Session Max, computed by Keycloak's own
+  session logic. The lifetime is then managed from the realm's Sessions settings in the console,
+  which does not offer an assertion lifespan field for `wsfed` clients. An explicit
+  `saml.assertion.lifespan` still takes precedence.
+
 - An active WS-Trust endpoint at `/realms/{realm}/protocol/wsfed/usernamemixed`, for relying
   parties that authenticate without a browser. It takes a WS-Trust 1.3 RequestSecurityToken in a
   SOAP envelope with a UsernameToken and issues the same signed token the passive flow does. Off
