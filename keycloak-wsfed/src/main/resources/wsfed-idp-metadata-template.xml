@@ -26,7 +26,7 @@ ${idp.claim.types}		</fed:ClaimTypesOffered>
 		<fed:SecurityTokenServiceEndpoint>
 			<wsa:EndpointReference>
 				<wsa:Address>${idp.sso.sts}</wsa:Address>
-			</wsa:EndpointReference>
+${idp.sso.sts.metadata}			</wsa:EndpointReference>
 		</fed:SecurityTokenServiceEndpoint>
 		<fed:PassiveRequestorEndpoint>
 			<wsa:EndpointReference>

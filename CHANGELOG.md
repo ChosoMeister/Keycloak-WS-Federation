@@ -20,6 +20,14 @@ previously accepted. Read them before upgrading a working deployment.
 - **A response carrying anything other than exactly one assertion is rejected.** Signature
   validation and claim extraction ran over separately parsed copies of the response, so a signed
   decoy alongside an unsigned assertion was a signature wrapping vector.
+- **SAML 2.0 validity times are written in UTC.** `NotBefore` and `NotOnOrAfter` used the JVM's
+  own time zone while `IssueInstant` was UTC; on a server not running in UTC some relying parties
+  read the window as hours off.
+- **`wctx` is returned exactly as received** in the RSTR `Context`. It was escaped twice, so a value
+  containing `&` or `<` came back altered.
+- **With the active WS-Trust endpoint enabled, the descriptor's `SecurityTokenServiceEndpoint`
+  points to `/usernamemixed` and references `/mex`**, in the form AD FS publishes, so a client can
+  find the active endpoint from federation metadata. With it disabled the descriptor is unchanged.
 - **Sign-out honours the client's valid post logout redirect URIs.** A `wreply` on `wsignout1.0`
   is checked against `post.logout.redirect.uris` with Keycloak's meaning (`+` for the valid
   redirect URIs, `-` for none); a client that has not set them keeps the valid redirect URIs as

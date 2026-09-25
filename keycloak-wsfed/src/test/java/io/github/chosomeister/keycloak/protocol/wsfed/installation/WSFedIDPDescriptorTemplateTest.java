@@ -50,6 +50,10 @@ class WSFedIDPDescriptorTemplateTest {
     }
 
     /** Renders the shipped template the way the installation provider does. */
+    private static final String WSA_NS = "http://www.w3.org/2005/08/addressing";
+    private static final String MEX_NS = "http://schemas.xmlsoap.org/ws/2004/09/mex";
+    private static final String PROTOCOL_URL = "https://keycloak.example.com/realms/Nova/protocol/wsfed";
+
     private static Document render(RealmModel realm) throws Exception {
         InputStream stream = WSFedIDPDescriptorTemplateTest.class.getClassLoader()
                 .getResourceAsStream("wsfed-idp-metadata-template.xml");
@@ -57,7 +61,8 @@ class WSFedIDPDescriptorTemplateTest {
 
         String rendered = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
                 .replace("${idp.entityID}", "https://keycloak.example.com/realms/Nova")
-                .replace("${idp.sso.sts}", "https://keycloak.example.com/realms/Nova/protocol/wsfed")
+                .replace("${idp.sso.sts}", WSFedIDPDescriptorClientInstallation.securityTokenServiceAddress(realm, PROTOCOL_URL))
+                .replace("${idp.sso.sts.metadata}", WSFedIDPDescriptorClientInstallation.securityTokenServiceMetadata(realm, PROTOCOL_URL))
                 .replace("${idp.sso.passive}", "https://keycloak.example.com/realms/Nova/protocol/wsfed")
                 .replace("${idp.signing.certificate}", "MIIBase64==")
                 .replace("${idp.service.displayName}", "Nova")
@@ -147,6 +152,21 @@ class WSFedIDPDescriptorTemplateTest {
 
         assertTrue(announced.contains("http://docs.oasis-open.org/ws-sx/ws-trust/200512"), announced);
         assertTrue(announced.contains(FED_NS), announced);
+    }
+
+    @Test
+    void theActiveEndpointIsWhereTheDescriptorSendsNonBrowserClients() throws Exception {
+        Element passiveOnly = (Element) render(realm(Map.of())).getElementsByTagNameNS(FED_NS, "SecurityTokenServiceEndpoint").item(0);
+        assertEquals(PROTOCOL_URL, passiveOnly.getElementsByTagNameNS(WSA_NS, "Address").item(0).getTextContent());
+        assertEquals(1, passiveOnly.getElementsByTagNameNS(WSA_NS, "Address").getLength());
+
+        Element active = (Element) render(realm(Map.of(
+                io.github.chosomeister.keycloak.protocol.wsfed.WSTrustActiveService.ENABLED_ATTRIBUTE, "true")))
+                .getElementsByTagNameNS(FED_NS, "SecurityTokenServiceEndpoint").item(0);
+        NodeList addresses = active.getElementsByTagNameNS(WSA_NS, "Address");
+        assertEquals(PROTOCOL_URL + "/usernamemixed", addresses.item(0).getTextContent());
+        assertEquals(PROTOCOL_URL + "/mex", addresses.item(1).getTextContent());
+        assertEquals(1, active.getElementsByTagNameNS(MEX_NS, "MetadataReference").getLength());
     }
 
     @Test
