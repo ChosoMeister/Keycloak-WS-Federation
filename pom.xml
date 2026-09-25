@@ -6,7 +6,7 @@
 
     <groupId>io.github.chosomeister.keycloak</groupId>
     <artifactId>keycloak-wsfed-parent</artifactId>
-    <version>26.7.0-1</version>
+    <version>26.7.0-2</version>
     <packaging>pom</packaging>
 
     <name>Keycloak WS-Federation Extension</name>
@@ -25,7 +25,7 @@
         <connection>scm:git:https://github.com/ChosoMeister/Keycloak-WS-Federation.git</connection>
         <developerConnection>scm:git:https://github.com/ChosoMeister/Keycloak-WS-Federation.git</developerConnection>
         <url>https://github.com/ChosoMeister/Keycloak-WS-Federation</url>
-        <tag>v26.7.0-1</tag>
+        <tag>v26.7.0-2</tag>
     </scm>
 
     <properties>
