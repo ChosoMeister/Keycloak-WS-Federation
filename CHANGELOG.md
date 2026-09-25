@@ -3,7 +3,7 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
-## Unreleased
+## 26.7.0-3
 
 - **SAML 2.0 assertions carry an `AuthnStatement`**, as AD FS sends and as the SAML 1.1 token here
   already did: `AuthnInstant` is when the Keycloak session started, the context is

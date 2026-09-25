@@ -111,7 +111,7 @@ docker run --rm \
 The self-contained provider is generated at:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar
 ```
 
 Prebuilt release artifacts and `SHA256SUMS` are published on the [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) page. Verify the checksum before installing a downloaded JAR.
@@ -138,7 +138,7 @@ for this relying party.
 Copy the provider JAR into the Quarkus provider directory and rebuild Keycloak:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -265,7 +265,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-2`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-3`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
 
 #### 2C. Existing Kubernetes deployment
 
@@ -273,7 +273,7 @@ Use the immutable image produced in the previous step; do not mount or inject th
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-2
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-3
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -289,7 +289,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-2
+  image: registry.example.com/keycloak-wsfed:26.7.0-3
   startOptimized: true
 ```
 
@@ -907,7 +907,7 @@ docker run --rm \
 فایل مستقل Provider در مسیر زیر ساخته می‌شود:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar
 ```
 
 فایل JAR آماده و `SHA256SUMS` در صفحه [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) منتشر می‌شوند. پیش از نصب JAR دانلودشده، checksum آن را بررسی کنید.
@@ -931,7 +931,7 @@ keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar
 فایل JAR را داخل پوشه Providerهای توزیع Quarkus کپی و Keycloak را مجدداً Build کنید:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -1058,7 +1058,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-2` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-3` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
 
 #### ۲-ج. استقرار موجود Kubernetes
 
@@ -1066,7 +1066,7 @@ Image را Build و scan کرده و با یک tag تغییرناپذیر مان
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-2
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-3
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -1082,7 +1082,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-2
+  image: registry.example.com/keycloak-wsfed:26.7.0-3
   startOptimized: true
 ```
 
