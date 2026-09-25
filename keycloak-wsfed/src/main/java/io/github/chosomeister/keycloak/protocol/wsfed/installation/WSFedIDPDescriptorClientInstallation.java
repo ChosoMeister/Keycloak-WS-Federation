@@ -66,7 +66,9 @@ public class WSFedIDPDescriptorClientInstallation implements ClientInstallationP
         try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))){
             template = br.lines().collect(Collectors.joining("\n"));
             template = template.replace("${idp.entityID}", RealmsResource.realmBaseUrl(UriBuilder.fromUri(uri)).build(realm.getName()).toString());
-            template = template.replace("${idp.sso.sts}", RealmsResource.protocolUrl(UriBuilder.fromUri(uri)).build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL).toString());
+            String protocolUrl = RealmsResource.protocolUrl(UriBuilder.fromUri(uri)).build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL).toString();
+            template = template.replace("${idp.sso.sts}", securityTokenServiceAddress(realm, protocolUrl));
+            template = template.replace("${idp.sso.sts.metadata}", securityTokenServiceMetadata(realm, protocolUrl));
             template = template.replace("${idp.sso.passive}", RealmsResource.protocolUrl(UriBuilder.fromUri(uri)).build(realm.getName(), WSFedLoginProtocol.LOGIN_PROTOCOL).toString());
             template = template.replace("${idp.signing.certificate}", PemUtils.encodeCertificate(activeKey.getCertificate()));
             template = template.replace("${idp.service.displayName}", serviceDisplayName(realm));
@@ -105,6 +107,31 @@ public class WSFedIDPDescriptorClientInstallation implements ClientInstallationP
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname", "Given Name",
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname", "Surname",
             "http://schemas.microsoft.com/ws/2008/06/identity/claims/role", "Role");
+
+    /**
+     * The security token service a relying party calls without a browser. While the realm serves
+     * the active profile that is the usernamemixed endpoint, with a reference to its WSDL in the
+     * form AD FS publishes, so a client such as the Dynamics 365 SDK can find it from the descriptor.
+     * Otherwise it stays the protocol URL, as before.
+     */
+    static String securityTokenServiceAddress(RealmModel realm, String protocolUrl) {
+        return WSTrustActiveService.isEnabled(realm) ? protocolUrl + "/usernamemixed" : protocolUrl;
+    }
+
+    static String securityTokenServiceMetadata(RealmModel realm, String protocolUrl) {
+        if (!WSTrustActiveService.isEnabled(realm)) {
+            return "";
+        }
+        return "\t\t\t\t<wsa:Metadata>\n"
+                + "\t\t\t\t\t<Metadata xmlns=\"http://schemas.xmlsoap.org/ws/2004/09/mex\" xmlns:wsx=\"http://schemas.xmlsoap.org/ws/2004/09/mex\">\n"
+                + "\t\t\t\t\t\t<wsx:MetadataSection Dialect=\"http://schemas.xmlsoap.org/ws/2004/09/mex\">\n"
+                + "\t\t\t\t\t\t\t<wsx:MetadataReference>\n"
+                + "\t\t\t\t\t\t\t\t<wsa:Address>" + protocolUrl + "/mex</wsa:Address>\n"
+                + "\t\t\t\t\t\t\t</wsx:MetadataReference>\n"
+                + "\t\t\t\t\t\t</wsx:MetadataSection>\n"
+                + "\t\t\t\t\t</Metadata>\n"
+                + "\t\t\t\t</wsa:Metadata>\n";
+    }
 
     /**
      * This extension implements the passive requestor profile only. Announcing the WS-Trust

@@ -29,10 +29,8 @@ import org.keycloak.saml.processing.core.saml.v2.util.XMLTimeUtil;
 
 
 import javax.xml.datatype.DatatypeConfigurationException;
-import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 import java.net.URI;
-import java.util.GregorianCalendar;
 
 /**
  * The purpose of this class is to create an inital SAML 1.1 assertion (essentially, a saml 1.1 token).
@@ -159,9 +157,8 @@ public class SAML11AssertionTypeBuilder {
     }
 
     protected XMLGregorianCalendar getXMLGregorianCalendarNow() throws DatatypeConfigurationException {
-        GregorianCalendar gregorianCalendar = new GregorianCalendar();
-        DatatypeFactory datatypeFactory = DatatypeFactory.newInstance();
-        return datatypeFactory.newXMLGregorianCalendar(gregorianCalendar);
+        //UTC, like IssueInstant; the JVM's own zone would put the conditions hours adrift for some relying parties
+        return XMLTimeUtil.getIssueInstant();
     }
 
     protected SAML11AuthenticationStatementType getAuthenticationStatement(SAML11SubjectType subject, XMLGregorianCalendar authenticationInstant) {

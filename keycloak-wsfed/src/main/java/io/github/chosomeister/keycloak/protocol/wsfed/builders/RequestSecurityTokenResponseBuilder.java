@@ -21,7 +21,6 @@ import io.github.chosomeister.keycloak.common.wsfed.writers.WSTrustResponseWrite
 import io.github.chosomeister.keycloak.protocol.wsfed.sig.SAML11Signature;
 import io.github.chosomeister.keycloak.protocol.wsfed.sig.SAML2SignatureProxy;
 import io.github.chosomeister.keycloak.protocol.wsfed.sig.SAMLAbstractSignature;
-import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.xml.security.keys.KeyInfo;
 import org.keycloak.dom.saml.v1.assertion.SAML11AssertionType;
 import org.keycloak.dom.saml.v2.assertion.AssertionType;
@@ -253,7 +252,8 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
     public RequestSecurityTokenResponse build() throws ConfigurationException, ProcessingException {
         RequestSecurityTokenResponse response = new RequestSecurityTokenResponse();
 
-        response.setContext(StringEscapeUtils.escapeXml11(context));
+        //The XML writer escapes it; escaping here as well handed the relying party a different wctx
+        response.setContext(context);
 
         XMLGregorianCalendar issueInstance = XMLTimeUtil.getIssueInstant();
         response.setLifetime(new Lifetime(issueInstance.toGregorianCalendar(), XMLTimeUtil.add(issueInstance, tokenExpiration * 1000L).toGregorianCalendar()));

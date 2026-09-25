@@ -29,10 +29,8 @@ import org.keycloak.saml.processing.core.saml.v2.util.AssertionUtil;
 import org.keycloak.saml.processing.core.saml.v2.util.XMLTimeUtil;
 
 import javax.xml.datatype.DatatypeConfigurationException;
-import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 import java.net.URI;
-import java.util.GregorianCalendar;
 
 public class SAML2AssertionTypeBuilder {
     protected static final Logger logger = Logger.getLogger(SAML2AssertionTypeBuilder.class);
@@ -101,7 +99,7 @@ public class SAML2AssertionTypeBuilder {
         AudienceRestrictionType audience = new AudienceRestrictionType();
         audience.addAudience(URI.create(requestIssuer));
         assertion.setConditions(new ConditionsType());
-        assertion.getConditions().setNotBefore(getXMLGregorianCalendarNow());
+        assertion.getConditions().setNotBefore(assertion.getIssueInstant());
         assertion.getConditions().addCondition(audience);
 
         //Update Conditions NotOnOrAfter
@@ -124,9 +122,8 @@ public class SAML2AssertionTypeBuilder {
     }
 
     public XMLGregorianCalendar getXMLGregorianCalendarNow() throws DatatypeConfigurationException {
-        GregorianCalendar gregorianCalendar = new GregorianCalendar();
-        DatatypeFactory datatypeFactory = DatatypeFactory.newInstance();
-        return datatypeFactory.newXMLGregorianCalendar(gregorianCalendar);
+        //UTC, like IssueInstant; the JVM's own zone would put the conditions hours adrift for some relying parties
+        return XMLTimeUtil.getIssueInstant();
     }
 
     protected NameIDType getNameIDType(String responseIssuer, String nameIdFormat) {
