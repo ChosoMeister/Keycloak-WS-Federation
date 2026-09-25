@@ -11,6 +11,7 @@ set -euo pipefail
 : "${WSFED_SIGNING_CERTIFICATE_FILE:?Set WSFED_SIGNING_CERTIFICATE_FILE to the external signing certificate file}"
 
 KCADM="${KCADM:-/opt/keycloak/bin/kcadm.sh}"
+command -v jq >/dev/null || { echo "jq is required." >&2; exit 2; }
 SSO_LOGOUT_URL="${WSFED_SLO_URL:-}"
 VALIDATE_SIGNATURE="${WSFED_VALIDATE_SIGNATURE:-true}"
 BACKCHANNEL_LOGOUT="${WSFED_BACKCHANNEL_LOGOUT:-false}"
@@ -19,16 +20,22 @@ case "${VALIDATE_SIGNATURE}" in true|false) ;; *) echo "WSFED_VALIDATE_SIGNATURE
 case "${BACKCHANNEL_LOGOUT}" in true|false) ;; *) echo "WSFED_BACKCHANNEL_LOGOUT must be true or false." >&2; exit 2 ;; esac
 [[ -r "${WSFED_SIGNING_CERTIFICATE_FILE}" ]] || { echo "Cannot read signing certificate file." >&2; exit 2; }
 
-signing_certificate=$(awk 'BEGIN {ORS="\\n"} {print}' "${WSFED_SIGNING_CERTIFICATE_FILE}")
-
 "${KCADM}" config credentials \
   --server "${KEYCLOAK_URL}" \
   --realm master \
   --user "${KEYCLOAK_ADMIN}" \
   --password "${KEYCLOAK_ADMIN_PASSWORD}"
 
-broker_payload=$(printf '{"alias":"%s","displayName":"%s","providerId":"wsfed","enabled":true,"trustEmail":false,"storeToken":false,"linkOnly":false,"firstBrokerLoginFlowAlias":"first broker login","config":{"singleSignOnServiceUrl":"%s","singleLogoutServiceUrl":"%s","wsfedRealm":"%s","signingCertificate":"%s","validateSignature":"%s","backchannelSupported":"%s","emptyActionHandledAsLogout":"false"}}' \
-  "${WSFED_BROKER_ALIAS}" "${WSFED_BROKER_ALIAS}" "${WSFED_SSO_URL}" "${SSO_LOGOUT_URL}" "${WSFED_ISSUER_REALM}" "${signing_certificate}" "${VALIDATE_SIGNATURE}" "${BACKCHANNEL_LOGOUT}")
+# Built with jq so the certificate's line breaks and any quote in a value stay valid JSON.
+broker_payload=$(jq -n \
+  --arg alias "${WSFED_BROKER_ALIAS}" --arg sso "${WSFED_SSO_URL}" --arg slo "${SSO_LOGOUT_URL}" \
+  --arg realm "${WSFED_ISSUER_REALM}" --rawfile cert "${WSFED_SIGNING_CERTIFICATE_FILE}" \
+  --arg validate "${VALIDATE_SIGNATURE}" --arg backchannel "${BACKCHANNEL_LOGOUT}" \
+  '{alias: $alias, displayName: $alias, providerId: "wsfed", enabled: true, trustEmail: false,
+    storeToken: false, linkOnly: false, firstBrokerLoginFlowAlias: "first broker login",
+    config: {singleSignOnServiceUrl: $sso, singleLogoutServiceUrl: $slo, wsfedRealm: $realm,
+             signingCertificate: ($cert | sub("\\s+$"; "")), validateSignature: $validate,
+             backchannelSupported: $backchannel, emptyActionHandledAsLogout: "false"}}')
 
 if "${KCADM}" get "identity-provider/instances/${WSFED_BROKER_ALIAS}" -r "${WSFED_REALM}" >/dev/null 2>&1; then
   printf '%s' "${broker_payload}" | "${KCADM}" update "identity-provider/instances/${WSFED_BROKER_ALIAS}" -r "${WSFED_REALM}" -f -

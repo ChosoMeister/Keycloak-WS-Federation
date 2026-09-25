@@ -301,7 +301,9 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
             Document doc = io.github.chosomeister.keycloak.saml.processing.core.saml.v2.util.AssertionUtil.asDocument(saml11Token);
             doc = signAssertion(doc, new SAML11Signature());
             if(encrypt){
-                doc=encryptDocument(doc);
+                //SAML 1.1 defines no encrypted assertion. Encrypting produced an element no relying
+                //party can read, so say what is wrong instead of issuing it.
+                throw new ConfigurationException("SAML 1.1 has no encrypted assertion. Use SAML 2.0 or turn off encryption for this client.");
             }
             response.getRequestedSecurityToken().add(doc.getDocumentElement());
             response.setTokenType(URI.create(SAML11Constants.ASSERTION_11_NSURI));
@@ -396,7 +398,9 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
             //add keyinfo to the generated EncryptedKey within the encrypted assertion
             KeyInfo keyInfo=new KeyInfo(samlDocument);
             keyInfo.add(encryptionPublicKey);
-            samlDocument.getElementsByTagName("xenc:EncryptedKey").item(0).appendChild(keyInfo.getElement().cloneNode(true));
+            //Found by namespace, so the lookup does not depend on the prefix the encryptor chose
+            samlDocument.getElementsByTagNameNS("http://www.w3.org/2001/04/xmlenc#", "EncryptedKey").item(0)
+                    .appendChild(keyInfo.getElement().cloneNode(true));
             return samlDocument;
         } catch (Exception e) {
             throw new ProcessingException("failed to encrypt", e);

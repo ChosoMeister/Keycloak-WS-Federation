@@ -3,6 +3,29 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
+## Unreleased
+
+- **SAML 2.0 assertions carry an `AuthnStatement`**, as AD FS sends and as the SAML 1.1 token here
+  already did: `AuthnInstant` is when the Keycloak session started, the context is
+  `PasswordProtectedTransport`.
+- **Encryption:** the AES key size is configurable per client with `wsfed.encryption.key-size`
+  (`128` by default, `192`, `256`). The key info is attached regardless of the XML prefix the
+  encryptor chooses. A SAML 1.1 client with encryption on is refused with a clear message; it
+  previously received an element no relying party could read.
+- **`wsfed.logout.url`** names where `wsignoutcleanup1.0` goes; without it the first valid redirect
+  URI is used, as before.
+- **An unknown `wsfed.saml_assertion_token_format` is logged as a warning naming the client** and the
+  valid values; SAML 2.0 is still issued.
+- **Broker:** an assertion without `Conditions` is refused cleanly instead of failing with a null
+  pointer. Encrypted assertions from an external provider are not supported and are refused, since
+  the single-assertion check introduced in 26.7.0-1.
+- **Scripts:** `configure-client.sh` and `configure-broker.sh` build their JSON with `jq`, so a
+  value containing a quote or backslash no longer produces invalid JSON. `configure-ad-claims.sh`
+  lists mappers left by its earlier versions and removes them only when
+  `WSFED_REMOVE_LEGACY_MAPPERS=true`.
+- **CI** exercises the active WS-Trust endpoint end to end: descriptor and mex, token issuance with
+  an `AuthnStatement`, wrong password, SOAP 1.1, direct access grants off, and the endpoint off.
+
 ## 26.7.0-2
 
 Targets Keycloak `26.7.x`. Verified against `26.6.3` and `26.7.0`.

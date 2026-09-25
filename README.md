@@ -501,6 +501,18 @@ Turning the profile on also makes the federation metadata announce the WS-Trust 
 at that point the claim is true. `wsfed.metadata.announce-ws-trust` remains for a relying party
 that needs them present without the active endpoint being served.
 
+#### Encryption and sign-out cleanup
+
+A client with **Encrypt assertions** on (`saml.encrypt`) and an encryption certificate receives a
+SAML 2.0 `EncryptedAssertion`. The AES key is 128 bits unless the client sets
+`wsfed.encryption.key-size` to `192` or `256`. SAML 1.1 defines no encrypted assertion, so a
+SAML 1.1 client with encryption on is refused with a clear log message rather than handed a token
+it cannot read.
+
+When a user signs out elsewhere, Keycloak sends `wsignoutcleanup1.0` to each relying party. The
+address is the client's first valid redirect URI, or `wsfed.logout.url` when the client sets it,
+which is the one to use for a client with several redirect URIs or only wildcard ones.
+
 #### Token lifetime
 
 A WS-Federation token carries three validity windows, and a relying party such as Dynamics 365 ties
@@ -1248,6 +1260,12 @@ GET /realms/{realm}/protocol/wsfed/mex
 این سند، Binding از نوع SOAP 1.2، عملیات Issue، و یک Policy که `UsernameToken` روی امنیت لایه انتقال می‌خواهد را توصیف می‌کند، به‌همراه آدرس Endpoint ی فعال همان‌طور که فراخوان به realm رسیده است.
 
 روشن کردن این پروفایل باعث می‌شود Federation Metadata هم Namespace های WS-Trust را اعلام کند، چون از آن لحظه این ادعا درست است. `wsfed.metadata.announce-ws-trust` برای Relying Party ای باقی می‌ماند که به حضور این Namespace ها نیاز دارد بدون آنکه Endpoint ی فعال سرو شود.
+
+#### رمزنگاری و پاک‌سازی خروج
+
+Client ای که **Encrypt assertions** (`saml.encrypt`) و گواهی رمزنگاری دارد، یک `EncryptedAssertion` از نوع SAML 2.0 دریافت می‌کند. کلید AES صد و بیست و هشت بیتی است مگر آنکه Client مقدار `wsfed.encryption.key-size` را `192` یا `256` بگذارد. SAML 1.1 اساساً Assertion رمزشده ندارد، پس Client ی با SAML 1.1 و رمزنگاری روشن، به‌جای گرفتن توکنی که نمی‌تواند بخواند، با پیام روشنی در لاگ رد می‌شود.
+
+وقتی کاربر از جای دیگری خارج می‌شود، Keycloak به هر Relying Party پیام `wsignoutcleanup1.0` می‌فرستد. آدرس آن اولین Valid redirect URI کلاینت است، یا `wsfed.logout.url` اگر Client آن را تنظیم کرده باشد؛ برای Client ی با چند Redirect URI یا فقط Wildcard از همین استفاده کنید.
 
 #### طول عمر توکن
 

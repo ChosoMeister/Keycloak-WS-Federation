@@ -27,6 +27,8 @@ import org.keycloak.dom.saml.v2.assertion.SubjectType;
 import org.keycloak.saml.processing.core.saml.v2.common.IDGenerator;
 import org.keycloak.saml.processing.core.saml.v2.util.AssertionUtil;
 import org.keycloak.saml.processing.core.saml.v2.util.XMLTimeUtil;
+import org.keycloak.saml.processing.core.saml.v2.util.StatementUtil;
+import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -42,6 +44,7 @@ public class SAML2AssertionTypeBuilder {
     protected int assertionExpiration;
     protected String nameId;
     protected String nameIdFormat;
+    protected XMLGregorianCalendar authnInstant;
 
     public SAML2AssertionTypeBuilder issuer(String issuer) {
         this.issuer = issuer;
@@ -88,6 +91,15 @@ public class SAML2AssertionTypeBuilder {
         return this;
     }
 
+    /**
+     * When the user actually authenticated. Without it the assertion's own issue instant is used,
+     * which is also what the SAML 1.1 authentication statement carries.
+     */
+    public SAML2AssertionTypeBuilder authnInstant(XMLGregorianCalendar authnInstant) {
+        this.authnInstant = authnInstant;
+        return this;
+    }
+
     public AssertionType buildModel() throws DatatypeConfigurationException {
         String id = IDGenerator.create("ID_");
         AssertionType assertion = AssertionUtil.createAssertion(id, getNameIDType(issuer, null));
@@ -117,6 +129,11 @@ public class SAML2AssertionTypeBuilder {
             subjectConfirmationData.setNotBefore(assertion.getConditions().getNotBefore());
             subjectConfirmationData.setNotOnOrAfter(XMLTimeUtil.add(assertion.getConditions().getNotBefore(), subjectExpiration * 1000L));
         }
+
+        //The authentication statement AD FS always sends, and the SAML 1.1 token here already carries
+        assertion.addStatement(StatementUtil.createAuthnStatement(
+                authnInstant != null ? authnInstant : assertion.getIssueInstant(),
+                JBossSAMLURIConstants.AC_PASSWORD_PROTECTED_TRANSPORT.get()));
 
         return assertion;
     }
