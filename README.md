@@ -321,6 +321,28 @@ For a direct installation, stop Keycloak, remove the new JAR, restore `keycloak-
 
 ### Configuration
 
+#### Setting up an AD FS replacement from scratch
+
+The sections below are a reference. To replace AD FS for a relying party such as Dynamics 365
+on-premises, go through them in this order; every step is idempotent and can be repeated.
+
+| Step | What | Where |
+|---|---|---|
+| 1 | Keep both hosts on NTP; token windows start at issue time | — |
+| 2 | Build and deploy the JAR, then `kc.sh build` (container: rebuild the image and recreate the container) | [Installation](#installation), [Container image](#container-image) |
+| 3 | Confirm the `wsfed` client type appears | [What appears in the Admin Console?](#what-appears-in-the-admin-console) |
+| 4 | Set **Unmanaged Attributes** to *Enabled* and add LDAP user federation for the directory | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
+| 5 | Create the client with `scripts/configure-client.sh`; `WSFED_CLIENT_ID` is exactly the relying party's `wtrealm` | [Keycloak as a WS-Federation Identity Provider](#keycloak-as-a-ws-federation-identity-provider) |
+| 6 | Drop `KeyName` from signatures for WIF/.NET relying parties (`NONE`) | [Naming the signing key](#naming-the-signing-key-in-the-signature) |
+| 7 | Set the token lifetime: follow the Keycloak session, or a fixed number of seconds | [Token lifetime](#token-lifetime) |
+| 8 | Configure the UPN, primary SID and Name claims with `scripts/configure-ad-claims.sh` | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
+| 9 | **Verify the claims with a real directory account** | [Verifying with a real account](#verifying-the-claims-with-a-real-account) |
+| 10 | Give the relying party the metadata URL `/realms/{realm}/protocol/wsfed/descriptor` | [Federation metadata](#federation-metadata-for-ws-federation-relying-parties) |
+| 11 | Only for clients without a browser (for example the Dynamics 365 SDK): enable active WS-Trust, turn on Direct access grants on the client, use a service account without OTP | [Active WS-Trust](#active-ws-trust-for-clients-without-a-browser) |
+| 12 | Optional: encryption, sign-out addresses | [Encryption and sign-out](#encryption-and-sign-out-cleanup) |
+
+When something fails, the [troubleshooting](#troubleshooting) table maps each symptom to its step.
+
 #### What appears in the Admin Console?
 
 The extension has two distinct modes:
@@ -509,6 +531,11 @@ SAML 2.0 `EncryptedAssertion`. The AES key is 128 bits unless the client sets
 SAML 1.1 client with encryption on is refused with a clear log message rather than handed a token
 it cannot read.
 
+A `wsignout1.0` request may carry `wreply`. It is checked against the client's **Valid post logout
+redirect URIs** (`post.logout.redirect.uris`) with Keycloak's meaning: `+` stands for the valid
+redirect URIs, `-` for none. A client that leaves the field empty keeps its valid redirect URIs as
+the allowed targets. Without `wreply` the user lands on the client's base URL.
+
 When a user signs out elsewhere, Keycloak sends `wsignoutcleanup1.0` to each relying party. The
 address is the client's first valid redirect URI, or `wsfed.logout.url` when the client sets it,
 which is the one to use for a client with several redirect URIs or only wildcard ones.
@@ -688,6 +715,7 @@ base64 that matches nothing.
 | `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | No | Source attribute for the Windows account name; default `msDS-PrincipalName` |
 | `WSFED_LDAP_NAME_ATTRIBUTE` | No | Source attribute for Name; defaults to the Windows account name, matching AD FS |
 | `WSFED_LDAP_SID_ATTRIBUTE` | No | Source attribute for the SID; default `objectSid` |
+| `WSFED_REMOVE_LEGACY_MAPPERS` | No | `true` removes mappers created by earlier versions of the script |
 
 The two token formats identify an attribute differently, so the mappers are written to match
 whichever format the client issues; the script reads that from the client and reports it. Under
@@ -707,6 +735,39 @@ attributes in the user profile. The script warns when the realm would drop them.
 return it. Confirm it arrives for a real account, and otherwise point `WSFED_LDAP_ACCOUNT_ATTRIBUTE`
 at an attribute holding the `DOMAIN\user` form.
 
+#### Verifying the claims with a real account
+
+None of the three intermediate user attributes exist in Active Directory itself; they are Keycloak
+user attributes that exist only when an LDAP mapper fills them. After a directory user has signed in
+once, check what Keycloak actually read:
+
+```bash
+kcadm.sh get users -r <realm> -q username=<user> | jq '.[0].attributes'
+```
+
+| Attribute | Correct | If you see | It means |
+|---|---|---|---|
+| `ad_primary_sid` | `S-1-5-21-...` | `AQUAAAAAAAUVAAAA...` | A stock attribute mapper, not `wsfed-ad-primary-sid-mapper` |
+| `ad_primary_sid` | `S-1-5-21-...` | missing | No mapper fills it |
+| `windowsAccountName` | `DOMAIN\user` | `user@domain` | Mapped from `userPrincipalName` |
+| `upn` | `user@domain` | missing | Its mapper was not created |
+
+To list the mappers on the LDAP provider:
+
+```bash
+ldap_id=$(kcadm.sh get components -r <realm> -q "type=org.keycloak.storage.UserStorageProvider" | jq -r '.[] | select(.providerId=="ldap") | .id')
+kcadm.sh get components -r <realm> -q "parent=${ldap_id}" | jq -r '.[] | "\(.name) [\(.providerId)] \(.config["ldap.attribute"] // []) -> \(.config["user.model.attribute"] // [])"'
+```
+
+A SID that cannot be converted is logged; `grep -i "as a SID"` in the server log finds it.
+
+Earlier versions of the claims script created mappers that are no longer used. The script lists
+them at the end of its run and removes them only when asked:
+
+```bash
+WSFED_REMOVE_LEGACY_MAPPERS=true ./scripts/configure-ad-claims.sh
+```
+
 #### Certificate format and rotation
 
 The Broker accepts a PEM certificate or its Base64 certificate body. Supply the public signing certificate, never the private key. When an upstream IdP rotates certificates, update the configured certificate before the old key expires. Metadata auto-import is not implemented yet, so certificate rotation is an explicit administrative operation.
@@ -722,6 +783,20 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | Login loops after external IdP | Broker callback URL, cookies/HTTPS, proxy headers, public hostname, and first-broker-login flow |
 | Provider works with `start-dev` but not `start --optimized` | Re-run `kc.sh build` after copying the JAR and rebuild the final container image |
 | Slow production startup | Compare an identically built baseline, database migrations, cache topology, DNS/TLS, mounted storage, and JVM limits; do not compare first-build time with optimized startup |
+| Old behaviour after replacing the JAR | The container was not rebuilt and recreated (`docker compose up -d --build --force-recreate`) |
+| Token issued but carries no claims | **Unmanaged Attributes** is disabled in the realm |
+| `ID4037` at the relying party | The signature carries `KeyName`; set the key name transformer to `NONE` on that client |
+| User is signed out about a minute after signing in | No token lifetime set; `Conditions` is still the 60-second default |
+| Lifetime does not follow the realm's session settings | `saml.assertion.lifespan` is still set and wins over `wsfed.token.lifespan.from-session` |
+| Token rejected as not yet valid | Clocks on the two hosts differ; use NTP |
+| `user not found` after a valid signature (Dynamics 365) | Primary SID wrong or missing; see [verifying the claims](#verifying-the-claims-with-a-real-account) |
+| `invalid redirect uri` on sign-out | `wreply` is not among the client's valid post logout redirect URIs |
+| `/mex` returns 404 | `wsfed.ws-trust.enabled` is not set on the realm |
+| SOAP fault `This relying party does not accept password sign-in.` | Direct access grants is off on the client |
+| SOAP fault `A second factor is required for this account...` | The account has OTP; use a service account without it, or set `wsfed.ws-trust.allow-password-only` |
+| SOAP fault `Account is not fully set up.` | The account has a pending required action; sign in once through the browser |
+| SOAP fault `Only SOAP 1.2 envelopes are supported.` | The caller sent SOAP 1.1 |
+| SOAP fault `Authentication failed.` | Wrong password, unknown or disabled user; deliberately indistinguishable |
 
 ### Endpoints
 
@@ -1114,6 +1189,27 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 
 ### پیکربندی
 
+#### راه‌اندازی جایگزین AD FS از صفر
+
+بخش‌های زیر مرجع هستند. برای جایگزینی AD FS برای Relying Party ای مانند Dynamics 365 On-Prem، آن‌ها را به همین ترتیب طی کنید؛ همه‌ی گام‌ها تکرارپذیرند.
+
+| گام | کار | بخش مرتبط |
+|---|---|---|
+| ۱ | ساعت هر دو میزبان با NTP همگام باشد؛ پنجره‌های اعتبار توکن از لحظه‌ی صدور شروع می‌شوند | — |
+| ۲ | ساخت و استقرار JAR و سپس `kc.sh build` (در کانتینر: بازسازی image و recreate کانتینر) | «نصب» و «ساخت image کانتینر» |
+| ۳ | اطمینان از دیده‌شدن نوع Client با نام `wsfed` | «چه چیزی در Admin Console دیده می‌شود؟» |
+| ۴ | روشن کردن **Unmanaged Attributes** و افزودن LDAP User Federation | «Claim های Active Directory» |
+| ۵ | ساخت Client با `scripts/configure-client.sh`؛ `WSFED_CLIENT_ID` دقیقاً همان `wtrealm` است | «استفاده از Keycloak به‌عنوان ارائه‌دهنده WS-Federation» |
+| ۶ | حذف `KeyName` از امضا برای Relying Party های WIF/.NET (`NONE`) | «نام‌گذاری کلید امضا در Signature» |
+| ۷ | تعیین طول عمر توکن: دنبال کردن سشن Keycloak یا عدد ثابت | «طول عمر توکن» |
+| ۸ | تنظیم Claim های UPN، Primary SID و Name با `scripts/configure-ad-claims.sh` | «Claim های Active Directory» |
+| ۹ | **تأیید Claim ها با یک کاربر واقعی AD** | «تأیید Claim ها با کاربر واقعی» |
+| ۱۰ | دادن آدرس Metadata یعنی `/realms/{realm}/protocol/wsfed/descriptor` به Relying Party | «Federation Metadata» |
+| ۱۱ | فقط برای کلاینت بدون مرورگر (مثل SDK دی۳۶۵): روشن کردن WS-Trust فعال، روشن کردن Direct access grants روی Client، و حساب سرویس بدون OTP | «WS-Trust فعال برای کلاینت‌های بدون مرورگر» |
+| ۱۲ | اختیاری: رمزنگاری و آدرس‌های خروج | «رمزنگاری و پاک‌سازی خروج» |
+
+اگر جایی شکست خورد، جدول «عیب‌یابی» هر نشانه را به گام مربوطش وصل می‌کند.
+
 #### چه چیزی در Admin Console دیده می‌شود؟
 
 افزونه دو حالت مستقل دارد:
@@ -1265,6 +1361,8 @@ GET /realms/{realm}/protocol/wsfed/mex
 
 Client ای که **Encrypt assertions** (`saml.encrypt`) و گواهی رمزنگاری دارد، یک `EncryptedAssertion` از نوع SAML 2.0 دریافت می‌کند. کلید AES صد و بیست و هشت بیتی است مگر آنکه Client مقدار `wsfed.encryption.key-size` را `192` یا `256` بگذارد. SAML 1.1 اساساً Assertion رمزشده ندارد، پس Client ی با SAML 1.1 و رمزنگاری روشن، به‌جای گرفتن توکنی که نمی‌تواند بخواند، با پیام روشنی در لاگ رد می‌شود.
 
+درخواست `wsignout1.0` می‌تواند `wreply` داشته باشد. این مقدار با **Valid post logout redirect URIs** کلاینت (`post.logout.redirect.uris`) و با همان معنای Keycloak سنجیده می‌شود: `+` یعنی همان Valid redirect URIs و `-` یعنی هیچ. اگر این فیلد خالی بماند، همان Valid redirect URIs معیار است. بدون `wreply` کاربر به Base URL کلاینت می‌رود.
+
 وقتی کاربر از جای دیگری خارج می‌شود، Keycloak به هر Relying Party پیام `wsignoutcleanup1.0` می‌فرستد. آدرس آن اولین Valid redirect URI کلاینت است، یا `wsfed.logout.url` اگر Client آن را تنظیم کرده باشد؛ برای Client ی با چند Redirect URI یا فقط Wildcard از همین استفاده کنید.
 
 #### طول عمر توکن
@@ -1354,6 +1452,87 @@ https://keycloak.example.com/realms/production/broker/corporate-adfs/endpoint
 
 بررسی امضا در محیط Production باید فعال باقی بماند.
 
+#### Federation Metadata برای Relying Party های WS-Federation
+
+آدرس `/realms/{realm}/protocol/wsfed/descriptor` سند Security Token Service را منتشر می‌کند: هر دو نوع توکن SAML، Claim type هایی که سرویس می‌تواند صادر کند، `protocolSupportEnumeration` و گواهی امضای realm. مصرف‌کننده‌های سخت‌گیر، از جمله wizard پیکربندی Claims-Based Authentication در Dynamics 365 On-Prem، شکل این سند را بررسی می‌کنند و سندی را که Token type یا Claim type نداشته باشد رد می‌کنند.
+
+`fed:ClaimTypesOffered` توانایی سرویس را اعلام می‌کند، نه محتوای یک توکن مشخص؛ Claim هایی که Relying Party واقعاً می‌گیرد از Protocol Mapper های Client خودش می‌آیند.
+
+| Realm attribute | پیش‌فرض | کارکرد |
+|---|---|---|
+| `wsfed.metadata.claim-types` | UPN، Primary SID، Name | فهرست Claim URI های اعلام‌شده، جداشده با فاصله یا کاما |
+| `wsfed.metadata.announce-ws-trust` | `false` | اعلام Namespace های WS-Trust بدون سرو کردن Endpoint فعال |
+
+وقتی realm مقدار `wsfed.ws-trust.enabled` را روشن کند، WS-Trust اعلام می‌شود و `SecurityTokenServiceEndpoint` به `/usernamemixed` همراه ارجاع به `/mex` اشاره می‌کند. بدون آن سند فقط پروفایل Passive را توصیف می‌کند، چون کلاینتی که بشنود WS-Trust در دسترس است دنبال Endpoint آن می‌گردد؛ SDK دات‌نت Dynamics 365 دقیقاً همین کار را می‌کند.
+
+این سند امضا نمی‌شود. Relying Party هایی که Metadata امضاشده می‌خواهند فعلاً پشتیبانی نمی‌شوند.
+
+#### Claim های Active Directory برای Relying Party های AD FS
+
+Relying Party هایی که برای AD FS نوشته شده‌اند Claim URI های مایکروسافت را انتظار دارند نه نام‌های پیش‌فرض Keycloak. وقتی کاربران از LDAP User Federation می‌آیند، `scripts/configure-ad-claims.sh` هر دو لایه‌ی این نگاشت را می‌سازد و اجرای دوباره‌اش بی‌خطر است:
+
+```bash
+export KEYCLOAK_URL='https://keycloak.example.com'
+export KEYCLOAK_ADMIN='admin'
+export KEYCLOAK_ADMIN_PASSWORD='replace-this-password'
+export WSFED_REALM='production'
+export WSFED_CLIENT_ID='urn:example:wsfed:rp'
+
+./scripts/configure-ad-claims.sh
+```
+
+| Claim | URI | Attribute در AD |
+|---|---|---|
+| UPN | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn` | `userPrincipalName` |
+| Primary SID | `http://schemas.microsoft.com/ws/2008/06/identity/claims/primarysid` | `objectSid` |
+| Name | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` | `msDS-PrincipalName` |
+
+این همان مجموعه‌ای است که AD FS به Dynamics 365 می‌دهد. دو جزئیات آن راحت اشتباه می‌شود:
+
+- Claim مربوط به Name مقدار `DOMAIN\user` را حمل می‌کند نه نام نمایشی؛ قانون AD FS نام حساب Windows را زیر Claim type مربوط به Name منتشر می‌کند.
+- Primary SID باید `objectSid` واقعی حساب به شکل `S-1-5-21-...` باشد، چون Dynamics 365 رکوردهای systemuser را با آن تطبیق می‌دهد؛ SID غلط یا غایب با خطای «user not found» شکست می‌خورد حتی وقتی Metadata و UPN درست‌اند. `objectSid` در AD باینری است و Keycloak تبدیلی برایش ندارد، پس این افزونه Mapper اختصاصی `wsfed-ad-primary-sid-mapper` را دارد که اسکریپت می‌سازد. Attribute mapper معمولی مقدار base64 ذخیره می‌کند که با هیچ رکوردی تطبیق نمی‌خورد.
+
+| متغیر | اجباری | کارکرد |
+|---|---|---|
+| `WSFED_TOKEN_FORMAT` | خیر | جایگزین تنظیم `SAML 1.1` / `SAML 2.0` خود Client |
+| `WSFED_LDAP_ALIAS` | فقط با چند LDAP provider | نام Provider ی که Mapper ها به آن وصل می‌شوند |
+| `WSFED_LDAP_UPN_ATTRIBUTE` | خیر | منبع UPN؛ پیش‌فرض `userPrincipalName` |
+| `WSFED_LDAP_ACCOUNT_ATTRIBUTE` | خیر | منبع نام حساب Windows؛ پیش‌فرض `msDS-PrincipalName` |
+| `WSFED_LDAP_NAME_ATTRIBUTE` | خیر | منبع Name؛ پیش‌فرض همان نام حساب Windows، مطابق AD FS |
+| `WSFED_LDAP_SID_ATTRIBUTE` | خیر | منبع SID؛ پیش‌فرض `objectSid` |
+| `WSFED_REMOVE_LEGACY_MAPPERS` | خیر | `true` یعنی Mapper های ساخته‌شده توسط نسخه‌های قبلی اسکریپت حذف شوند |
+
+دو فرمت توکن Attribute را متفاوت نام‌گذاری می‌کنند و اسکریپت فرمت را از خود Client می‌خواند: در SAML 2.0 کل Claim URI نام Attribute است؛ در SAML 1.1 شکسته می‌شود و WIF آن را از `AttributeName` و `AttributeNamespace` دوباره می‌سازد. اگر بعداً فرمت Client را عوض کردید، اسکریپت را دوباره اجرا کنید.
+
+دو شرط تعیین می‌کند Claim ها واقعاً به Relying Party برسند:
+
+- از Keycloak 24، realm ویژگی‌هایی را که User Profile اعلام نکرده دور می‌ریزد. این Claim ها روی Unmanaged Attribute ها حرکت می‌کنند، پس **Realm settings → General → Unmanaged Attributes** را روی *Enabled* بگذارید یا سه Attribute را در User Profile تعریف کنید. اسکریپت در این حالت هشدار می‌دهد.
+- `msDS-PrincipalName` یک Attribute ساختگی (constructed) است و بعضی Directory ها آن را برنمی‌گردانند. برای یک حساب واقعی تأیید کنید و در غیر این صورت `WSFED_LDAP_ACCOUNT_ATTRIBUTE` را به Attribute ی با شکل `DOMAIN\user` اشاره دهید.
+
+#### تأیید Claim ها با کاربر واقعی
+
+هیچ‌کدام از سه User attribute واسط در خود AD وجود ندارند؛ User attribute های Keycloak هستند که فقط وقتی یک LDAP mapper پرشان کند وجود دارند. بعد از اینکه یک کاربر AD یک بار وارد شد، ببینید Keycloak واقعاً چه خوانده است:
+
+```bash
+kcadm.sh get users -r <realm> -q username=<user> | jq '.[0].attributes'
+```
+
+| Attribute | درست | اگر این را دیدید | یعنی |
+|---|---|---|---|
+| `ad_primary_sid` | `S-1-5-21-...` | `AQUAAAAAAAUVAAAA...` | Attribute mapper معمولی است نه `wsfed-ad-primary-sid-mapper` |
+| `ad_primary_sid` | `S-1-5-21-...` | غایب | هیچ Mapper ی پرش نمی‌کند |
+| `windowsAccountName` | `DOMAIN\user` | `user@domain` | از `userPrincipalName` نگاشت شده |
+| `upn` | `user@domain` | غایب | Mapper مربوطه ساخته نشده |
+
+فهرست Mapper های LDAP provider:
+
+```bash
+ldap_id=$(kcadm.sh get components -r <realm> -q "type=org.keycloak.storage.UserStorageProvider" | jq -r '.[] | select(.providerId=="ldap") | .id')
+kcadm.sh get components -r <realm> -q "parent=${ldap_id}" | jq -r '.[] | "\(.name) [\(.providerId)] \(.config["ldap.attribute"] // []) -> \(.config["user.model.attribute"] // [])"'
+```
+
+SID ی که تبدیل نشود در لاگ سرور ثبت می‌شود و با `grep -i "as a SID"` پیدا می‌شود. نسخه‌های قبلی اسکریپت Mapper هایی ساخته‌اند که دیگر استفاده نمی‌شوند؛ اسکریپت آن‌ها را در پایان اجرا فهرست می‌کند و فقط با `WSFED_REMOVE_LEGACY_MAPPERS=true` حذفشان می‌کند.
+
 #### فرمت و تعویض Certificate
 
 Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌پذیرد. فقط certificate عمومی امضا را وارد کنید و هرگز private key را در این تنظیم قرار ندهید. هنگام تعویض certificate در IdP بالادستی، پیش از انقضای کلید قبلی تنظیمات Keycloak را به‌روزرسانی کنید. Import خودکار metadata هنوز پیاده‌سازی نشده و تعویض certificate فعلاً یک عملیات مدیریتی صریح است.
@@ -1369,6 +1548,20 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | حلقه Login پس از بازگشت از IdP | callback مربوط به Broker، Cookie/HTTPS، proxy headers، hostname عمومی و First Broker Login Flow |
 | کارکرد با `start-dev` و شکست با `start --optimized` | پس از کپی JAR دوباره `kc.sh build` اجرا و image نهایی بازسازی شود |
 | Startup کند در Production | baseline کاملاً مشابه، migration دیتابیس، cache، DNS/TLS، storage و محدودیت JVM بررسی شود؛ زمان build اولیه با startup بهینه مقایسه نشود |
+| رفتار قدیمی بعد از تعویض JAR | کانتینر بازسازی و recreate نشده (`docker compose up -d --build --force-recreate`) |
+| توکن صادر می‌شود ولی هیچ Claim ندارد | **Unmanaged Attributes** در realm خاموش است |
+| خطای `ID4037` در Relying Party | امضا `KeyName` دارد؛ Key name transformer را روی همان Client برابر `NONE` بگذارید |
+| کاربر حدود یک دقیقه بعد از ورود خارج می‌شود | طول عمر توکن تنظیم نشده و `Conditions` هنوز ۶۰ ثانیه است |
+| طول عمر از تنظیمات سشن realm پیروی نمی‌کند | `saml.assertion.lifespan` هنوز ست است و بر `wsfed.token.lifespan.from-session` برنده است |
+| توکن «هنوز معتبر نیست» رد می‌شود | ساعت دو میزبان همگام نیست؛ NTP |
+| `user not found` بعد از امضای معتبر (Dynamics 365) | Primary SID غلط یا غایب؛ بخش «تأیید Claim ها با کاربر واقعی» |
+| `invalid redirect uri` هنگام خروج | `wreply` در Valid post logout redirect URIs کلاینت نیست |
+| `/mex` پاسخ 404 می‌دهد | `wsfed.ws-trust.enabled` روی realm ست نشده |
+| SOAP Fault با متن `This relying party does not accept password sign-in.` | Direct access grants روی Client خاموش است |
+| SOAP Fault با متن `A second factor is required for this account...` | حساب OTP دارد؛ از حساب سرویس بدون OTP استفاده کنید یا `wsfed.ws-trust.allow-password-only` را ست کنید |
+| SOAP Fault با متن `Account is not fully set up.` | Required Action روی حساب مانده؛ یک بار با مرورگر وارد شوید |
+| SOAP Fault با متن `Only SOAP 1.2 envelopes are supported.` | فراخوان SOAP 1.1 فرستاده |
+| SOAP Fault با متن `Authentication failed.` | رمز غلط، کاربر ناموجود یا غیرفعال؛ عمداً از هم قابل تشخیص نیستند |
 
 ### Endpointها
 
