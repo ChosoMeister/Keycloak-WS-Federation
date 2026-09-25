@@ -20,6 +20,10 @@ previously accepted. Read them before upgrading a working deployment.
 - **A response carrying anything other than exactly one assertion is rejected.** Signature
   validation and claim extraction ran over separately parsed copies of the response, so a signed
   decoy alongside an unsigned assertion was a signature wrapping vector.
+- **Sign-out honours the client's valid post logout redirect URIs.** A `wreply` on `wsignout1.0`
+  is checked against `post.logout.redirect.uris` with Keycloak's meaning (`+` for the valid
+  redirect URIs, `-` for none); a client that has not set them keeps the valid redirect URIs as
+  before. A sign-out without `wreply` now lands on the client's base URL instead of failing.
 - **The active WS-Trust endpoint enforces what the browser flow enforces.** A client must have
   *Direct access grants* enabled to accept a password there; an account with a pending required
   action is refused; an account with OTP configured is refused unless the realm sets

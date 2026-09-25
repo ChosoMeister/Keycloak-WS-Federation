@@ -31,6 +31,8 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.AuthorizationEndpointBase;
 import org.keycloak.protocol.LoginProtocol;
+import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
+import org.keycloak.protocol.oidc.OIDCConfigAttributes;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.utils.RedirectUtils;
 import org.keycloak.services.ErrorPage;
@@ -38,10 +40,14 @@ import org.keycloak.services.ErrorPageException;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.RealmsResource;
+import org.keycloak.services.util.ResolveRelative;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.CommonClientSessionModel;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -351,6 +357,36 @@ public class WSFedService extends AuthorizationEndpointBase {
         return handleBrowserAuthenticationRequest(authSession, wsfedProtocol, false, redirectToAuthentication);
     }
 
+    /**
+     * Where a sign-out for this client ends up. A supplied wreply is checked against the client's
+     * valid post logout redirect URIs, with Keycloak's own meaning: "+" stands for the valid
+     * redirect URIs and "-" for none. A client that has not set them keeps using its valid redirect
+     * URIs, as before. Without a wreply the user lands on the client's base URL, as at sign-in.
+     */
+    protected String logoutTarget(String wreply, ClientModel client) {
+        if (wreply == null) {
+            String baseUrl = client.getBaseUrl();
+            return baseUrl == null || baseUrl.isBlank()
+                    ? null
+                    : ResolveRelative.resolveRelativeUri(session, client.getRootUrl(), baseUrl);
+        }
+        return RedirectUtils.verifyRedirectUri(session, client.getRootUrl(), wreply, validLogoutRedirects(client), true);
+    }
+
+    static Set<String> validLogoutRedirects(ClientModel client) {
+        String raw = client.getAttribute(OIDCConfigAttributes.POST_LOGOUT_REDIRECT_URIS);
+        if (raw == null || raw.isBlank()) {
+            return client.getRedirectUris();
+        }
+        List<String> configured = OIDCAdvancedConfigWrapper.fromClientModel(client).getPostLogoutRedirectUris();
+        Set<String> valid = configured == null ? new HashSet<>() : new HashSet<>(configured);
+        valid.remove("-");
+        if (valid.remove("+")) {
+            valid.addAll(client.getRedirectUris());
+        }
+        return valid;
+    }
+
     protected Response handleLogoutRequest(WSFedProtocolParameters params, ClientModel client) {
         //We either need a client or a reply address to make this work
         if (client == null && params.getWsfedReply() == null) {
@@ -361,7 +397,7 @@ public class WSFedService extends AuthorizationEndpointBase {
 
         String logoutUrl;
         if (client != null) {
-            logoutUrl = RedirectUtils.verifyRedirectUri(session, params.getWsfedReply(), client);
+            logoutUrl = logoutTarget(params.getWsfedReply(), client);
         } else {
             // Modern Keycloak no longer accepts an arbitrary realm-level redirect.
             // A logout target must be validated against a concrete client.
