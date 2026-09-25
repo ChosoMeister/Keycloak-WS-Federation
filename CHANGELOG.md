@@ -20,6 +20,12 @@ previously accepted. Read them before upgrading a working deployment.
 - **A response carrying anything other than exactly one assertion is rejected.** Signature
   validation and claim extraction ran over separately parsed copies of the response, so a signed
   decoy alongside an unsigned assertion was a signature wrapping vector.
+- **The active WS-Trust endpoint enforces what the browser flow enforces.** A client must have
+  *Direct access grants* enabled to accept a password there; an account with a pending required
+  action is refused; an account with OTP configured is refused unless the realm sets
+  `wsfed.ws-trust.allow-password-only`. Only SOAP 1.2 envelopes are read, and the credentials and
+  request are taken only from their defined positions in the envelope. An unknown user costs the
+  same password hash as a known one.
 - **A client that does not use the `wsfed` protocol can no longer obtain a token.** `wtrealm` was
   resolved by client id alone, so any OIDC or SAML client in the realm could be driven through the
   security token service.

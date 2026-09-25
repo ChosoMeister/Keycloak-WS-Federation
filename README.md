@@ -466,6 +466,22 @@ Everything about the token comes from the relying party's own client, exactly as
 flow: which claims it carries, whether it is SAML 1.1 or 2.0, how the signature names the key, and
 whether it is encrypted. A client configured once behaves the same through both endpoints.
 
+Only a client with **Direct access grants** enabled accepts a password here. It is the same
+switch Keycloak uses for the OIDC password grant, and it leaves the browser flow untouched, so a
+relying party that signs in only through the browser keeps it off.
+
+A password is all this endpoint can check, so it refuses an account that would be asked for more
+at the browser: one with a pending required action, or one with an OTP credential configured. A
+realm whose non-interactive accounts are deliberately password-only, while people keep their second
+factor at the browser, can let OTP accounts through here as well:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.allow-password-only"=true'
+```
+
+The usual arrangement is a dedicated service account for the SDK, with no second factor, and the
+setting left off.
+
 Failures come back as SOAP faults. They are deliberately coarse — a caller learns the request was
 refused, not whether the user exists or which relying party is registered. Realm brute force
 protection applies to the endpoint, and each attempt is recorded as a login event.
@@ -1211,6 +1227,16 @@ POST /realms/{realm}/protocol/wsfed/usernamemixed
 > این Endpoint تا وقتی realm روشنش نکند خاموش است و جایی که چیزی به آن نیاز ندارد باید خاموش بماند. برخلاف Endpoint ی Passive، رمز را مستقیماً می‌پذیرد و روشن کردنش سطح در معرض دید را افزایش می‌دهد. فقط `PasswordText` پذیرفته می‌شود، روی HTTPS در صورتی که realm الزام کرده باشد؛ رمز Digest شده رد می‌شود و به‌عنوان رمز در نظر گرفته نمی‌شود.
 
 همه‌چیز درباره توکن از خود Client مربوط به Relying Party می‌آید، دقیقاً مثل جریان مرورگری: اینکه چه Claim هایی دارد، SAML 1.1 است یا 2.0، امضا کلید را چطور نام می‌برد، و رمزنگاری می‌شود یا نه. یک Client که یک بار پیکربندی شود، از هر دو Endpoint رفتار یکسانی دارد.
+
+فقط Client ای که **Direct access grants** در آن روشن است اینجا رمز را می‌پذیرد. این همان کلیدی است که Keycloak برای Password Grant در OIDC به کار می‌برد و روی جریان مرورگری اثری ندارد؛ پس Relying Party ای که فقط از مرورگر وارد می‌شود آن را خاموش نگه می‌دارد.
+
+این Endpoint فقط رمز را می‌تواند بررسی کند، پس حسابی را که در مرورگر از آن چیز بیشتری خواسته می‌شد رد می‌کند: حسابی با Required Action در انتظار، یا حسابی که OTP برایش تنظیم شده است. realm ای که حساب‌های غیرتعاملی‌اش عمداً فقط رمز دارند و کاربران عادی فاکتور دوم را در مرورگر نگه می‌دارند، می‌تواند حساب‌های OTP را هم اینجا عبور دهد:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.allow-password-only"=true'
+```
+
+روال معمول یک حساب سرویس اختصاصی برای SDK بدون فاکتور دوم است و این تنظیم خاموش می‌ماند.
 
 خطاها به شکل SOAP Fault برمی‌گردند و عمداً کلی هستند: فراخوان می‌فهمد درخواست رد شده، نه اینکه کاربر وجود دارد یا کدام Relying Party ثبت شده است. محافظت Brute Force خود realm روی این Endpoint اعمال می‌شود و هر تلاش به‌عنوان یک Login Event ثبت می‌گردد.
 
