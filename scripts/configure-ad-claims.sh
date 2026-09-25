@@ -247,6 +247,44 @@ upsert_protocol_mapper 'upn'         "${USER_ATTR_UPN}"     "${CLAIM_UPN}"
 upsert_protocol_mapper 'primary sid'  "${USER_ATTR_SID}"     "${CLAIM_SID}"
 upsert_protocol_mapper 'name'         "${USER_ATTR_NAME}"    "${CLAIM_NAME}"
 
+# --- Mappers left by earlier versions of this script ------------------------------------------
+# They still emit claims or fill attributes the current configuration no longer uses. They are
+# listed, and removed only when WSFED_REMOVE_LEGACY_MAPPERS=true, so nothing disappears unasked.
+
+REMOVE_LEGACY="${WSFED_REMOVE_LEGACY_MAPPERS:-false}"
+case "${REMOVE_LEGACY}" in true|false) ;; *) echo "WSFED_REMOVE_LEGACY_MAPPERS must be true or false." >&2; exit 2 ;; esac
+
+legacy_protocol=$(jq -r '.[] | select(.name == "windows account name") | "\(.id) \(.name)"' <<<"${existing_protocol_mappers}")
+legacy_ldap_names='["wsfed-display-name"]'
+if [[ "${LDAP_NAME_ATTRIBUTE}" == "${LDAP_ACCOUNT_ATTRIBUTE}" ]]; then
+  legacy_ldap_names='["wsfed-display-name","wsfed-name"]'
+fi
+legacy_ldap=$(jq -r --argjson names "${legacy_ldap_names}" '.[] | select(.name as $n | $names | index($n)) | "\(.id) \(.name)"' <<<"${existing_ldap_mappers}")
+
+if [[ -n "${legacy_protocol}${legacy_ldap}" ]]; then
+  echo
+  echo "Mappers from an earlier version of this script:"
+  while read -r id name_rest; do
+    [[ -z "${id}" ]] && continue
+    if [[ "${REMOVE_LEGACY}" == true ]]; then
+      "${KCADM}" delete "clients/${client_uuid}/protocol-mappers/models/${id}" -r "${WSFED_REALM}"
+      echo "  removed claim mapper ${name_rest}"
+    else
+      echo "  claim mapper ${name_rest}"
+    fi
+  done <<<"${legacy_protocol}"
+  while read -r id name_rest; do
+    [[ -z "${id}" ]] && continue
+    if [[ "${REMOVE_LEGACY}" == true ]]; then
+      "${KCADM}" delete "components/${id}" -r "${WSFED_REALM}"
+      echo "  removed LDAP mapper ${name_rest}"
+    else
+      echo "  LDAP mapper ${name_rest}"
+    fi
+  done <<<"${legacy_ldap}"
+  [[ "${REMOVE_LEGACY}" == true ]] || echo "Run again with WSFED_REMOVE_LEGACY_MAPPERS=true to remove them."
+fi
+
 cat <<EOF
 
 Configured three AD-backed claims for ${WSFED_CLIENT_ID} in realm ${WSFED_REALM}.

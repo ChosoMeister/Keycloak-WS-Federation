@@ -56,7 +56,8 @@ public class WSFedSAML2AssertionTypeBuilder extends WsFedSAMLAssertionTypeAbstra
                 .assertionExpiration(lifespan > 0 ? lifespan : realm.getAccessCodeLifespan())
                 .subjectExpiration(lifespan > 0 ? lifespan : realm.getAccessTokenLifespan())
                 .nameIdentifier(nameIdFormat, nameId)
-                .requestIssuer(clientSession.getClient().getClientId());
+                .requestIssuer(clientSession.getClient().getClientId())
+                .authnInstant(authenticationInstant(userSession));
 
         AssertionType assertion = builder.buildModel();
 
@@ -82,6 +83,19 @@ public class WSFedSAML2AssertionTypeBuilder extends WsFedSAMLAssertionTypeAbstra
         populateRoles(roleListMapper, assertion, session, userSession, clientSession);
 
         return assertion;
+    }
+
+    static javax.xml.datatype.XMLGregorianCalendar authenticationInstant(UserSessionModel userSession) {
+        if (userSession == null || userSession.getStarted() <= 0) {
+            return null;
+        }
+        java.util.GregorianCalendar utc = new java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC"));
+        utc.setTimeInMillis(userSession.getStarted() * 1000L);
+        try {
+            return javax.xml.datatype.DatatypeFactory.newInstance().newXMLGregorianCalendar(utc);
+        } catch (javax.xml.datatype.DatatypeConfigurationException e) {
+            return null;
+        }
     }
 
     protected void populateRoles(SamlProtocol.ProtocolMapperProcessor<WSFedSAMLRoleListMapper> roleListMapper,

@@ -39,9 +39,6 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import jakarta.ws.rs.core.Response;
-import javax.xml.datatype.DatatypeConfigurationException;
-import javax.xml.datatype.DatatypeFactory;
-import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPathExpressionException;
 
@@ -106,9 +103,13 @@ public class SAML11RequestedToken implements RequestedToken {
                 return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_FEDERATED_IDENTITY_ACTION);
             }
 
-            XMLGregorianCalendar notBefore = samlAssertion.getConditions().getNotBefore();
-            //Add in a tiny bit of slop for small clock differences
-            notBefore.add(DatatypeFactory.newInstance().newDuration(false, 0, 0, 0, 0, 0, 10));
+            //Without Conditions the assertion has neither a validity window nor an audience, so it
+            //is refused like any other assertion that is not scoped to this relying party.
+            if (samlAssertion.getConditions() == null) {
+                event.event(EventType.IDENTITY_PROVIDER_RESPONSE);
+                event.error(Errors.INVALID_SAML_RESPONSE);
+                return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_FEDERATED_IDENTITY_ACTION);
+            }
 
             if (AssertionUtil.hasExpired(samlAssertion)) {
                 event.event(EventType.IDENTITY_PROVIDER_RESPONSE);
@@ -122,7 +123,7 @@ public class SAML11RequestedToken implements RequestedToken {
                 return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_FEDERATED_IDENTITY_ACTION);
             }
 
-        } catch (GeneralSecurityException | DatatypeConfigurationException | XPathExpressionException | ParserConfigurationException e) {
+        } catch (GeneralSecurityException | XPathExpressionException | ParserConfigurationException e) {
             logger.error("Unable to validate signature", e);
             event.event(EventType.IDENTITY_PROVIDER_RESPONSE);
             event.error(Errors.INVALID_SAML_RESPONSE);

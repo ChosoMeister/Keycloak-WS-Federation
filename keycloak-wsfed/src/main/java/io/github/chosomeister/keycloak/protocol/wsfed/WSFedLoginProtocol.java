@@ -304,7 +304,8 @@ public class WSFedLoginProtocol implements LoginProtocol {
                 return WsFedSAMLAssertionTokenFormat.parse(value);
             return WsFedSAMLAssertionTokenFormat.SAML20_ASSERTION_TOKEN_FORMAT;
         } catch (RuntimeException ex) {
-            logger.error(ex.toString());
+            logger.warnf("Client %s sets %s to '%s', which is not a known token format; issuing SAML 2.0."
+                    + " Use 'SAML 2.0' or 'SAML 1.1'.", client.getClientId(), WSFED_SAML_ASSERTION_TOKEN_FORMAT, value);
         }
         return WsFedSAMLAssertionTokenFormat.SAML20_ASSERTION_TOKEN_FORMAT;
     }
@@ -317,15 +318,31 @@ public class WSFedLoginProtocol implements LoginProtocol {
         return Boolean.parseBoolean(client.getAttribute(WSFED_X5T));
     }
 
-    @Override
-    public Response backchannelLogout(UserSessionModel userSession, AuthenticatedClientSessionModel clientSession) {
-        logger.debug("backchannelLogout");
-        ClientModel client = clientSession.getClient();
+    public static final String LOGOUT_URL_ATTRIBUTE = "wsfed.logout.url";
+
+    /**
+     * Where Keycloak sends wsignoutcleanup1.0 for this client. A client with several valid redirect
+     * URIs, or only wildcard ones, can name the address with wsfed.logout.url; it is the
+     * administrator's own setting, like SAML's single logout service URL. Without it the first valid
+     * redirect URI is used, as before.
+     */
+    protected String signOutCleanupUrl(ClientModel client) {
+        String configured = client.getAttribute(LOGOUT_URL_ATTRIBUTE);
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
         String redirectUri = null;
         if (!client.getRedirectUris().isEmpty()) {
             redirectUri = client.getRedirectUris().iterator().next();
         }
-        String logoutUrl = RedirectUtils.verifyRedirectUri(session, redirectUri, client);
+        return RedirectUtils.verifyRedirectUri(session, redirectUri, client);
+    }
+
+    @Override
+    public Response backchannelLogout(UserSessionModel userSession, AuthenticatedClientSessionModel clientSession) {
+        logger.debug("backchannelLogout");
+        ClientModel client = clientSession.getClient();
+        String logoutUrl = signOutCleanupUrl(client);
         if (logoutUrl == null) {
             logger.warn("Can't do backchannel logout. No SingleLogoutService POST Binding registered for client: " + client.getClientId());
             return Response.serverError().build();
@@ -373,11 +390,7 @@ public class WSFedLoginProtocol implements LoginProtocol {
     public Response frontchannelLogout(UserSessionModel userSession, AuthenticatedClientSessionModel clientSession) {
         logger.debug("frontchannelLogout");
         ClientModel client = clientSession.getClient();
-        String redirectUri = null;
-        if (!client.getRedirectUris().isEmpty()) {
-            redirectUri = client.getRedirectUris().iterator().next();
-        }
-        String logoutUrl = RedirectUtils.verifyRedirectUri(session, redirectUri, client);
+        String logoutUrl = signOutCleanupUrl(client);
         if (logoutUrl == null) {
             logger.error("Can't finish WS-Fed logout as there is no logout binding set. Has the redirect URI being used been added to the valid redirect URIs in the client?");
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REDIRECT_URI);
@@ -434,7 +447,30 @@ public class WSFedLoginProtocol implements LoginProtocol {
                 .setKeyInfoKeyNameTransformer(keyInfoKeyNameTransformer(client));
 
         if ("true".equals(client.getAttribute("saml.encrypt"))) {
-            builder.encrypt(SamlProtocolUtils.getEncryptionKey(session, client));
+            builder.encrypt(SamlProtocolUtils.getEncryptionKey(session, client))
+                    .encryptionKeySize(encryptionKeySize(client));
+        }
+    }
+
+    public static final String ENCRYPTION_KEY_SIZE = "wsfed.encryption.key-size";
+
+    /**
+     * AES key size for an encrypted assertion: 128 unless the client asks for 192 or 256. Anything
+     * else keeps 128 and says so, rather than failing a sign-in.
+     */
+    static int encryptionKeySize(ClientModel client) {
+        String configured = client.getAttribute(ENCRYPTION_KEY_SIZE);
+        if (configured == null || configured.isBlank()) {
+            return 128;
+        }
+        switch (configured.trim()) {
+            case "128": return 128;
+            case "192": return 192;
+            case "256": return 256;
+            default:
+                logger.warnf("Client %s sets %s to '%s'; only 128, 192 and 256 are valid, so 128 is used.",
+                        client.getClientId(), ENCRYPTION_KEY_SIZE, configured);
+                return 128;
         }
     }
 
