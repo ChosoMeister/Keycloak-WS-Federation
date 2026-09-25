@@ -3,7 +3,7 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
-## Unreleased
+## 26.7.0-2
 
 Targets Keycloak `26.7.x`. Verified against `26.6.3` and `26.7.0`.
 

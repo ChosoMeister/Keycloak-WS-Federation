@@ -74,10 +74,11 @@ docker compose down --volumes
 - Legacy SAML 1.1 assertion tokens
 - User attribute, user property, group, and role protocol mappers
 - Broker attribute-to-user and attribute-to-role mappers
+- Active WS-Trust 1.3 `usernamemixed` and `mex` endpoints, off unless a realm enables them
 
 The following are outside the current scope:
 
-- active WS-Trust endpoints;
+- WS-Trust profiles other than a username and password over HTTPS, such as Windows or certificate authentication;
 - attribute and pseudonym services; and
 - a guaranteed interoperability claim for every third-party AD FS or WS-Federation implementation.
 
@@ -110,7 +111,7 @@ docker run --rm \
 The self-contained provider is generated at:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar
 ```
 
 Prebuilt release artifacts and `SHA256SUMS` are published on the [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) page. Verify the checksum before installing a downloaded JAR.
@@ -137,7 +138,7 @@ for this relying party.
 Copy the provider JAR into the Quarkus provider directory and rebuild Keycloak:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -264,7 +265,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-1`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-2`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
 
 #### 2C. Existing Kubernetes deployment
 
@@ -272,7 +273,7 @@ Use the immutable image produced in the previous step; do not mount or inject th
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-1
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-2
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -288,7 +289,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-1
+  image: registry.example.com/keycloak-wsfed:26.7.0-2
   startOptimized: true
 ```
 
@@ -623,11 +624,12 @@ client, configured by the helper below. Two realm attributes steer the document:
 | `wsfed.metadata.claim-types` | UPN, primary SID, Name | Whitespace or comma separated claim type URIs to advertise |
 | `wsfed.metadata.announce-ws-trust` | `false` | Whether `protocolSupportEnumeration` also lists the WS-Trust namespaces |
 
-WS-Trust is not announced by default, because this extension implements the **passive requestor
-profile only**. There is no active endpoint, no metadata exchange endpoint, and no SOAP surface. A
-client told that WS-Trust is available will look for an endpoint that does not exist; the Dynamics
-365 .NET SDK does exactly this. Turn the attribute on only if a relying party needs the namespaces
-present for its own reasons.
+WS-Trust is announced when the realm enables the active endpoint (`wsfed.ws-trust.enabled`), and
+the `SecurityTokenServiceEndpoint` then points at `/usernamemixed` with a reference to `/mex`.
+Without it the descriptor describes the passive profile only, because a client told that WS-Trust
+is available will look for an endpoint; the Dynamics 365 .NET SDK does exactly this. The
+`wsfed.metadata.announce-ws-trust` attribute lists the namespaces without serving the endpoint, for
+a relying party that needs them present for its own reasons.
 
 The document is not signed. Relying parties that require signed metadata are not supported yet.
 
@@ -750,11 +752,7 @@ The following checks were performed on 2026-07-18 using the official `quay.io/ke
 | Standard `wsignin1.0` request | HTTP 200 login page and authentication session created |
 | Runtime `ERROR`, `FATAL`, or exception entries | None observed |
 
-The tested `26.7.0-1` release JAR was 671 KiB and had this SHA-256 digest:
-
-```text
-9b5b1e4aea591f7b067f2f6a7610aaa0edc3c9736cd5717e69faed4086a9cbc8
-```
+Record the SHA-256 of the JAR you deploy with `sha256sum`, and compare it with the digest published alongside the release it came from.
 
 #### Startup and metadata measurements
 
@@ -860,10 +858,11 @@ docker compose down --volumes
 - توکن‌های قدیمی Assertion مبتنی بر SAML 1.1
 - Mapperهای ویژگی کاربر، مشخصات کاربر، گروه و نقش
 - Mapperهای Broker برای تبدیل ویژگی‌ها به کاربر و نقش
+- Endpoint های فعال WS-Trust 1.3 یعنی `usernamemixed` و `mex`، که تا realm روشنشان نکند خاموش‌اند
 
 موارد زیر فعلاً خارج از محدوده پروژه هستند:
 
-- endpointهای Active WS-Trust؛
+- پروفایل‌های WS-Trust غیر از نام کاربری و رمز روی HTTPS، مانند احراز هویت Windows یا Certificate؛
 - سرویس‌های Attribute و Pseudonym؛ و
 - تضمین سازگاری با تمام پیاده‌سازی‌های AD FS یا WS-Federation شرکت‌های ثالث.
 
@@ -896,7 +895,7 @@ docker run --rm \
 فایل مستقل Provider در مسیر زیر ساخته می‌شود:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
+keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar
 ```
 
 فایل JAR آماده و `SHA256SUMS` در صفحه [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) منتشر می‌شوند. پیش از نصب JAR دانلودشده، checksum آن را بررسی کنید.
@@ -920,7 +919,7 @@ keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar
 فایل JAR را داخل پوشه Providerهای توزیع Quarkus کپی و Keycloak را مجدداً Build کنید:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-1.jar \
+cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-2.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -1047,7 +1046,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-1` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-2` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
 
 #### ۲-ج. استقرار موجود Kubernetes
 
@@ -1055,7 +1054,7 @@ Image را Build و scan کرده و با یک tag تغییرناپذیر مان
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-1
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-2
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -1071,7 +1070,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-1
+  image: registry.example.com/keycloak-wsfed:26.7.0-2
   startOptimized: true
 ```
 
@@ -1394,11 +1393,7 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | درخواست استاندارد `wsignin1.0` | نمایش صفحه ورود با HTTP 200 و ساخت Authentication Session |
 | خطای Runtime از نوع `ERROR`، `FATAL` یا Exception | مشاهده نشد |
 
-حجم فایل JAR آزمایش‌شده نسخه Release برابر `26.7.0-1` معادل 671 KiB و SHA-256 آن به‌شکل زیر بود:
-
-```text
-9b5b1e4aea591f7b067f2f6a7610aaa0edc3c9736cd5717e69faed4086a9cbc8
-```
+مقدار SHA-256 فایل JAR ی را که مستقر می‌کنید با `sha256sum` ثبت کنید و با Digest ی که همراه همان Release منتشر شده مقایسه کنید.
 
 #### اندازه‌گیری Startup و Metadata
 
