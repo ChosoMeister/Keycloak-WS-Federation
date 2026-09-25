@@ -17,7 +17,10 @@ import org.keycloak.models.ClientModel;
 import org.keycloak.models.ClientSessionContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.credential.hash.PasswordHashProvider;
+import org.keycloak.models.PasswordPolicy;
 import org.keycloak.models.UserCredentialModel;
+import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.services.managers.AuthenticationManager;
@@ -61,6 +64,15 @@ public class WSTrustActiveService {
 
     /** Realm attribute turning the active endpoint on. Absent means off. */
     public static final String ENABLED_ATTRIBUTE = "wsfed.ws-trust.enabled";
+
+    /**
+     * Realm attribute that lets a user who has a second factor configured sign in here with a
+     * password alone. The active profile carries no second factor, so by default such a user is
+     * refused: accepting them would make this endpoint a way around the second factor that the
+     * browser flow enforces. Turn it on only where people run tools that use this endpoint with
+     * their own accounts, and accept that for them this path is protected by the password only.
+     */
+    public static final String ALLOW_PASSWORD_ONLY_ATTRIBUTE = "wsfed.ws-trust.allow-password-only";
 
     private static final String AUTH_METHOD = "wsfed-ws-trust";
     private static final String GENERIC_AUTH_FAILURE = "Authentication failed.";
@@ -177,7 +189,11 @@ public class WSTrustActiveService {
 
         Document envelope = WSTrustSoap.parseEnvelope(body);
 
-        Element rstElement = WSTrustSoap.firstChild(envelope, WSTrustSoap.TRUST_NS, "RequestSecurityToken");
+        if (!WSTrustSoap.isSoap12Envelope(envelope)) {
+            throw new WSTrustFault(true, "Only SOAP 1.2 envelopes are supported.", Errors.INVALID_REQUEST);
+        }
+
+        Element rstElement = WSTrustSoap.requestSecurityToken(envelope);
         if (rstElement == null) {
             throw new WSTrustFault(true, "The request carries no RequestSecurityToken.", Errors.INVALID_REQUEST);
         }
@@ -228,13 +244,21 @@ public class WSTrustActiveService {
             throw new WSTrustFault(true, "Unknown relying party.", Errors.CLIENT_NOT_FOUND);
         }
 
+        // Keycloak's own switch for whether a client may be given tokens in exchange for a password.
+        // The realm attribute decides whether the endpoint exists; this decides, per relying party,
+        // whether it may be used, exactly as it does for the OpenID Connect password grant.
+        if (!client.isDirectAccessGrantsEnabled()) {
+            event.client(client);
+            throw new WSTrustFault(true, "This relying party does not accept password sign-in.", Errors.NOT_ALLOWED);
+        }
+
         event.client(client);
         session.getContext().setClient(client);
         return client;
     }
 
     private UserModel authenticate(Document envelope, ClientModel client) {
-        Element usernameToken = WSTrustSoap.firstChild(envelope, WSTrustSoap.WSSE_NS, "UsernameToken");
+        Element usernameToken = WSTrustSoap.usernameToken(envelope);
         if (usernameToken == null) {
             throw new WSTrustFault(true, "The request carries no UsernameToken.", Errors.INVALID_REQUEST);
         }
@@ -261,8 +285,16 @@ public class WSTrustActiveService {
             user = session.users().getUserByEmail(realm, username);
         }
 
-        if (user == null || !user.isEnabled()) {
-            throw new WSTrustFault(true, GENERIC_AUTH_FAILURE, Errors.INVALID_USER_CREDENTIALS);
+        if (user == null) {
+            // Spend the time a password check would, so the response time does not reveal which
+            // usernames exist. Keycloak does the same in its own login forms.
+            dummyHash();
+            throw new WSTrustFault(true, GENERIC_AUTH_FAILURE, Errors.USER_NOT_FOUND);
+        }
+
+        if (!user.isEnabled()) {
+            event.user(user);
+            throw new WSTrustFault(true, GENERIC_AUTH_FAILURE, Errors.USER_DISABLED);
         }
 
         BruteForceProtector protector = session.getProvider(BruteForceProtector.class);
@@ -288,7 +320,45 @@ public class WSTrustActiveService {
         }
 
         event.user(user);
+
+        String refusal = refusalAfterPassword(realm, user);
+        if (refusal != null) {
+            throw new WSTrustFault(true, refusal, Errors.NOT_ALLOWED);
+        }
+
         return user;
+    }
+
+    /**
+     * The checks Keycloak's own password grant makes once the password is known to be right. They
+     * run only then, so that a caller without the password learns nothing about the account.
+     *
+     * @return the reason to refuse the user, or null when the token may be issued
+     */
+    static String refusalAfterPassword(RealmModel realm, UserModel user) {
+        // A pending required action, such as a password that must be changed, means the account
+        // is not ready for use. There is no page here on which to complete it.
+        if (user.getRequiredActionsStream().findAny().isPresent()) {
+            return "Account is not fully set up.";
+        }
+
+        // The browser flow asks such a user for their second factor; this profile cannot.
+        if (user.credentialManager().isConfiguredFor(OTPCredentialModel.TYPE)
+                && !Boolean.parseBoolean(realm.getAttribute(ALLOW_PASSWORD_ONLY_ATTRIBUTE))) {
+            return "A second factor is required for this account, and this endpoint cannot accept one.";
+        }
+
+        return null;
+    }
+
+    private void dummyHash() {
+        PasswordPolicy policy = realm.getPasswordPolicy();
+        PasswordHashProvider provider = policy != null && policy.getHashAlgorithm() != null
+                ? session.getProvider(PasswordHashProvider.class, policy.getHashAlgorithm())
+                : session.getProvider(PasswordHashProvider.class);
+        if (provider != null) {
+            provider.encodedCredential("SlightlyLongerDummyPassword", policy != null ? policy.getHashIterations() : -1);
+        }
     }
 
     /**

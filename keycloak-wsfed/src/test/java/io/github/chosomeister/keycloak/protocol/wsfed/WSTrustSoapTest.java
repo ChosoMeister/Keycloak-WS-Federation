@@ -88,4 +88,36 @@ class WSTrustSoapTest {
         assertTrue(WSTrustSoap.fault(false, "server broke").contains("s:Receiver"));
         assertFalse(WSTrustSoap.fault(true, "<b>x</b>").contains("<b>"));
     }
+
+    @Test
+    void theCredentialIsTakenOnlyFromTheSecurityHeader() throws Exception {
+        // A UsernameToken placed in the body is not the caller's credential.
+        String misplaced = ENVELOPE
+                .replace("<o:Security><o:UsernameToken>", "<o:Security><o:Other>")
+                .replace("</o:UsernameToken></o:Security>", "</o:Other></o:Security>")
+                .replace("<s:Body>", "<s:Body><o:UsernameToken><o:Username>mallory</o:Username>"
+                        + "<o:Password>x</o:Password></o:UsernameToken>");
+
+        assertNull(WSTrustSoap.usernameToken(WSTrustSoap.parseEnvelope(misplaced)));
+        assertNotNull(WSTrustSoap.usernameToken(WSTrustSoap.parseEnvelope(ENVELOPE)));
+    }
+
+    @Test
+    void theRequestIsTakenOnlyFromTheBody() throws Exception {
+        assertNotNull(WSTrustSoap.requestSecurityToken(WSTrustSoap.parseEnvelope(ENVELOPE)));
+
+        String inHeader = ENVELOPE
+                .replace("<trust:RequestSecurityToken xmlns:trust=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"/>", "")
+                .replace("<s:Header>", "<s:Header><trust:RequestSecurityToken xmlns:trust=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"/>");
+        assertNull(WSTrustSoap.requestSecurityToken(WSTrustSoap.parseEnvelope(inHeader)));
+    }
+
+    @Test
+    void onlySoap12EnvelopesAreRecognised() throws Exception {
+        String soap11 = ENVELOPE.replace("http://www.w3.org/2003/05/soap-envelope", "http://schemas.xmlsoap.org/soap/envelope/");
+
+        assertFalse(WSTrustSoap.isSoap12Envelope(WSTrustSoap.parseEnvelope(soap11)));
+        assertTrue(WSTrustSoap.isSoap12Envelope(WSTrustSoap.parseEnvelope(ENVELOPE)));
+        assertNull(WSTrustSoap.usernameToken(WSTrustSoap.parseEnvelope(soap11)));
+    }
 }

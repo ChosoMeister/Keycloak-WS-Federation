@@ -90,6 +90,56 @@ public final class WSTrustSoap {
     }
 
     /**
+     * The UsernameToken of the request, taken only from where WS-Security puts it: the Security
+     * header of a SOAP 1.2 envelope. A token found anywhere else, the body included, is not the
+     * caller's credential and is ignored.
+     *
+     * @param envelope the parsed request
+     * @return the UsernameToken, or null when the header carries none
+     */
+    public static Element usernameToken(Document envelope) {
+        Element header = envelopeChild(envelope, "Header");
+        Element security = directChild(header, WSSE_NS, "Security");
+        return directChild(security, WSSE_NS, "UsernameToken");
+    }
+
+    /**
+     * The RequestSecurityToken of the request, taken only from the body of a SOAP 1.2 envelope.
+     *
+     * @param envelope the parsed request
+     * @return the RequestSecurityToken, or null when the body carries none
+     */
+    public static Element requestSecurityToken(Document envelope) {
+        return directChild(envelopeChild(envelope, "Body"), TRUST_NS, "RequestSecurityToken");
+    }
+
+    /**
+     * @param envelope the parsed request
+     * @return whether the document is a SOAP 1.2 envelope, the only version this endpoint speaks
+     */
+    public static boolean isSoap12Envelope(Document envelope) {
+        Element root = envelope.getDocumentElement();
+        return root != null && SOAP12_NS.equals(root.getNamespaceURI()) && "Envelope".equals(root.getLocalName());
+    }
+
+    private static Element envelopeChild(Document envelope, String localName) {
+        return isSoap12Envelope(envelope) ? directChild(envelope.getDocumentElement(), SOAP12_NS, localName) : null;
+    }
+
+    private static Element directChild(Element parent, String namespace, String localName) {
+        if (parent == null) {
+            return null;
+        }
+        for (Node child = parent.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (child instanceof Element element && namespace.equals(element.getNamespaceURI())
+                    && localName.equals(element.getLocalName())) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    /**
      * @param element the element whose text is wanted
      * @return the element's text with surrounding whitespace removed, or null when absent or empty
      */
