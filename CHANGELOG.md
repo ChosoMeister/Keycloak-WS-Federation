@@ -3,6 +3,13 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
+## Unreleased
+
+- **The JAR is built as `keycloak-wsfed.jar`**, without the version in the file name, so copying a
+  new build into `providers/` replaces the old one instead of leaving two side by side.
+- **README: rollback warning** for the `wsfed-ad-primary-sid-mapper` LDAP mapper, which stops every
+  LDAP sign-in when it exists but the running server lacks the extension.
+
 ## 26.7.0-3
 
 - **SAML 2.0 assertions carry an `AuthnStatement`**, as AD FS sends and as the SAML 1.1 token here
