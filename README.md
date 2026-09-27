@@ -111,7 +111,7 @@ docker run --rm \
 The self-contained provider is generated at:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar
+keycloak-wsfed/target/keycloak-wsfed.jar
 ```
 
 Prebuilt release artifacts and `SHA256SUMS` are published on the [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) page. Verify the checksum before installing a downloaded JAR.
@@ -138,7 +138,7 @@ for this relying party.
 Copy the provider JAR into the Quarkus provider directory and rebuild Keycloak:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar \
+cp keycloak-wsfed/target/keycloak-wsfed.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -318,6 +318,21 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 ```
 
 For a direct installation, stop Keycloak, remove the new JAR, restore `keycloak-wsfed.jar.before-upgrade` when one existed, run `kc.sh build` again with the original build-time options, and restart the service. If client or broker configuration was already changed, restore those records or the database/realm backup separately. Removing the JAR does not remove configuration stored in the database.
+
+> [!CAUTION]
+> **Remove the `wsfed-ad-primary-sid-mapper` LDAP mapper before running a JAR that lacks it.** The
+> mapper lives in the database. If Keycloak runs without the extension, or with a release older
+> than the one that introduced it, every LDAP lookup fails with
+> `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` and no directory user can sign in,
+> in any client. Delete it first under **User federation → (LDAP provider) → Mappers**, or:
+>
+> ```bash
+> kcadm.sh get components -r <realm> -q providerId=wsfed-ad-primary-sid-mapper --fields id,name
+> kcadm.sh delete components/<id> -r <realm>
+> ```
+>
+> Before creating it, confirm the running server actually has the factory:
+> `kcadm.sh get serverinfo | grep -c wsfed-ad-primary-sid-mapper` must print a number above 0.
 
 ### Configuration
 
@@ -784,6 +799,7 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | Provider works with `start-dev` but not `start --optimized` | Re-run `kc.sh build` after copying the JAR and rebuild the final container image |
 | Slow production startup | Compare an identically built baseline, database migrations, cache topology, DNS/TLS, mounted storage, and JVM limits; do not compare first-build time with optimized startup |
 | Old behaviour after replacing the JAR | The container was not rebuilt and recreated (`docker compose up -d --build --force-recreate`) |
+| No LDAP user can sign in; log shows `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` | The running server does not have the extension (or has an older one) while the SID mapper exists; remove the mapper or deploy the JAR, see [Rollback](#4-rollback) |
 | Token issued but carries no claims | **Unmanaged Attributes** is disabled in the realm |
 | `ID4037` at the relying party | The signature carries `KeyName`; set the key name transformer to `NONE` on that client |
 | User is signed out about a minute after signing in | No token lifetime set; `Conditions` is still the 60-second default |
@@ -982,7 +998,7 @@ docker run --rm \
 فایل مستقل Provider در مسیر زیر ساخته می‌شود:
 
 ```text
-keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar
+keycloak-wsfed/target/keycloak-wsfed.jar
 ```
 
 فایل JAR آماده و `SHA256SUMS` در صفحه [GitHub Releases](https://github.com/ChosoMeister/Keycloak-WS-Federation/releases) منتشر می‌شوند. پیش از نصب JAR دانلودشده، checksum آن را بررسی کنید.
@@ -1006,7 +1022,7 @@ keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar
 فایل JAR را داخل پوشه Providerهای توزیع Quarkus کپی و Keycloak را مجدداً Build کنید:
 
 ```bash
-cp keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar \
+cp keycloak-wsfed/target/keycloak-wsfed.jar \
   /opt/keycloak/providers/keycloak-wsfed.jar
 
 /opt/keycloak/bin/kc.sh build
@@ -1186,6 +1202,16 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 ```
 
 در نصب مستقیم، Keycloak را متوقف کنید، JAR جدید را حذف و در صورت وجود فایل `keycloak-wsfed.jar.before-upgrade` آن را بازیابی کنید. سپس `kc.sh build` را با build-time optionهای قبلی اجرا و سرویس را راه‌اندازی کنید. اگر تنظیمات Client یا Broker تغییر کرده‌اند، آن رکوردها یا backup دیتابیس/Realm را جداگانه برگردانید. حذف JAR تنظیمات ذخیره‌شده در دیتابیس را حذف نمی‌کند.
+
+> [!CAUTION]
+> **پیش از اجرای JAR ی که Mapper مربوط به `wsfed-ad-primary-sid-mapper` را ندارد، این LDAP Mapper را حذف کنید.** این Mapper در دیتابیس ذخیره است. اگر Keycloak بدون افزونه یا با نسخه‌ای قدیمی‌تر اجرا شود، همه‌ی جستجوهای LDAP با خطای `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` شکست می‌خورند و هیچ کاربر AD در هیچ Client ی نمی‌تواند وارد شود. ابتدا آن را از **User federation ← (LDAP provider) ← Mappers** حذف کنید، یا:
+>
+> ```bash
+> kcadm.sh get components -r <realm> -q providerId=wsfed-ad-primary-sid-mapper --fields id,name
+> kcadm.sh delete components/<id> -r <realm>
+> ```
+>
+> پیش از ساختن آن هم مطمئن شوید سرور در حال اجرا واقعاً آن را می‌شناسد: خروجی `kcadm.sh get serverinfo | grep -c wsfed-ad-primary-sid-mapper` باید بزرگ‌تر از صفر باشد.
 
 ### پیکربندی
 
@@ -1549,6 +1575,7 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | کارکرد با `start-dev` و شکست با `start --optimized` | پس از کپی JAR دوباره `kc.sh build` اجرا و image نهایی بازسازی شود |
 | Startup کند در Production | baseline کاملاً مشابه، migration دیتابیس، cache، DNS/TLS، storage و محدودیت JVM بررسی شود؛ زمان build اولیه با startup بهینه مقایسه نشود |
 | رفتار قدیمی بعد از تعویض JAR | کانتینر بازسازی و recreate نشده (`docker compose up -d --build --force-recreate`) |
+| هیچ کاربر LDAP نمی‌تواند وارد شود و لاگ `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` دارد | سرور در حال اجرا افزونه (یا نسخه‌ی جدید آن) را ندارد ولی Mapper مربوط به SID وجود دارد؛ Mapper را حذف یا JAR را مستقر کنید (بخش Rollback) |
 | توکن صادر می‌شود ولی هیچ Claim ندارد | **Unmanaged Attributes** در realm خاموش است |
 | خطای `ID4037` در Relying Party | امضا `KeyName` دارد؛ Key name transformer را روی همان Client برابر `NONE` بگذارید |
 | کاربر حدود یک دقیقه بعد از ورود خارج می‌شود | طول عمر توکن تنظیم نشده و `Conditions` هنوز ۶۰ ثانیه است |

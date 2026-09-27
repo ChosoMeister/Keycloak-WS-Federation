@@ -23,14 +23,14 @@ jobs:
         run: mvn --batch-mode --no-transfer-progress clean verify
       - name: Verify provider contents
         run: |
-          jar tf keycloak-wsfed/target/keycloak-wsfed-26.7.0-3.jar > jar-contents.txt
+          jar tf keycloak-wsfed/target/keycloak-wsfed.jar > jar-contents.txt
           grep -q 'META-INF/services/org.keycloak.protocol.LoginProtocolFactory' jar-contents.txt
           grep -q 'io/github/chosomeister/keycloak/protocol/wsfed/WSFedLoginProtocol.class' jar-contents.txt
           ! grep -q '^theme/' jar-contents.txt
       - uses: actions/upload-artifact@v6
         with:
           name: keycloak-wsfed
-          path: keycloak-wsfed/target/keycloak-wsfed-*.jar
+          path: keycloak-wsfed/target/keycloak-wsfed.jar
           if-no-files-found: error
 
   integration:

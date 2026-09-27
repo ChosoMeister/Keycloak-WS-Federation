@@ -79,6 +79,8 @@
     </dependencies>
 
     <build>
+        <!-- A fixed file name, so a deployment that copies the JAR never ends up with two versions side by side -->
+        <finalName>keycloak-wsfed</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
