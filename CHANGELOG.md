@@ -3,6 +3,11 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
+## Unreleased
+
+- README: the Dynamics 365 SDK service account must be a directory account that is a CRM user,
+  not a Keycloak-only user, which has no SID and is rejected by CRM.
+
 ## 26.7.0-5
 
 - **The SID mapper no longer breaks sign-in on a read-only LDAP provider.** It wrote the SID onto
