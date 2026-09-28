@@ -46,3 +46,7 @@ fi
 
 echo "Metadata: ${KEYCLOAK_URL}/realms/${WSFED_REALM}/protocol/wsfed/descriptor"
 echo "Endpoint: ${KEYCLOAK_URL}/realms/${WSFED_REALM}/protocol/wsfed"
+echo
+echo "Settings in the admin console (not in the menu; open and bookmark these addresses):"
+echo "  Client settings: ${KEYCLOAK_URL}/admin/master/console/#/${WSFED_REALM}/page-section/WS-Federation%20clients"
+echo "  Realm settings:  ${KEYCLOAK_URL}/admin/master/console/#/${WSFED_REALM}/page-section/WS-Federation%20realm"
