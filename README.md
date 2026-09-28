@@ -336,6 +336,30 @@ For a direct installation, stop Keycloak, remove the new JAR, restore `keycloak-
 
 ### Configuration
 
+#### Admin console pages
+
+The stock client pages have no field for most WS-Federation settings. The extension adds two pages
+to the admin console that edit them, so they do not have to be set with kcadm:
+
+| Page | Address | What it edits |
+|---|---|---|
+| WS-Federation clients | `/admin/master/console/#/{realm}/page-section/WS-Federation%20clients` | Per client: token format, key name (`NONE` for WIF/.NET), token lifetime (follow the session or fixed seconds), password sign-in for active WS-Trust, JWT/x5t, encryption and key size, sign-out cleanup URL |
+| WS-Federation realm | `/admin/master/console/#/{realm}/page-section/WS-Federation%20realm` | Active WS-Trust on or off, OTP accounts with a password only, announcing WS-Trust, metadata claim types |
+
+Replace `master` with the realm you administer from if it is not `master`. The pages are reached by
+their address: Keycloak lists extension pages in the navigation only when the experimental
+`declarative-ui` feature is enabled, and nothing here needs it.
+
+The settings stay where they always were, in realm and client attributes, so kcadm, the scripts
+and the pages all agree:
+
+- Every WS-Federation client has an entry, created and removed with the client.
+- Saving writes only the fields you changed. If a setting changed after the page was opened, the
+  save is refused with *Reload the page and try again*, rather than overwriting the newer value.
+- Client entries follow a change made elsewhere immediately; the realm entry within a minute.
+- Deleting an entry leaves the client's settings untouched; the entry comes back with the next
+  change to the client.
+
 #### Setting up an AD FS replacement from scratch
 
 The sections below are a reference. To replace AD FS for a relying party such as Dynamics 365
@@ -1214,6 +1238,24 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 > پیش از ساختن آن هم مطمئن شوید سرور در حال اجرا واقعاً آن را می‌شناسد: خروجی `kcadm.sh get serverinfo | grep -c wsfed-ad-primary-sid-mapper` باید بزرگ‌تر از صفر باشد.
 
 ### پیکربندی
+
+#### صفحه‌های کنسول مدیریت
+
+صفحه‌های پیش‌فرض Client برای بیشتر تنظیمات WS-Federation فیلدی ندارند. افزونه دو صفحه به کنسول مدیریت اضافه می‌کند تا لازم نباشد این تنظیمات با kcadm ست شوند:
+
+| صفحه | آدرس | چه چیزی را ویرایش می‌کند |
+|---|---|---|
+| WS-Federation clients | `/admin/master/console/#/{realm}/page-section/WS-Federation%20clients` | برای هر Client: فرمت توکن، نام کلید در امضا (`NONE` برای WIF/.NET)، طول عمر توکن (دنبال کردن سشن یا عدد ثابت)، ورود با رمز برای WS-Trust فعال، JWT/x5t، رمزنگاری و طول کلید، آدرس پاک‌سازی خروج |
+| WS-Federation realm | `/admin/master/console/#/{realm}/page-section/WS-Federation%20realm` | روشن/خاموش WS-Trust فعال، پذیرش حساب‌های OTP با رمز تنها، اعلام WS-Trust، Claim type های Metadata |
+
+اگر از realm دیگری غیر از `master` مدیریت می‌کنید، `master` را جایگزین کنید. این صفحه‌ها با آدرسشان باز می‌شوند: Keycloak صفحه‌های افزونه را فقط وقتی قابلیت آزمایشی `declarative-ui` روشن باشد در منو نشان می‌دهد، و اینجا به آن نیازی نیست.
+
+تنظیمات همان‌جایی می‌مانند که همیشه بوده‌اند، یعنی Attribute های realm و Client؛ پس kcadm، اسکریپت‌ها و این صفحه‌ها همیشه هم‌خوان‌اند:
+
+- هر Client ی از نوع WS-Federation یک ردیف دارد که همراه خود Client ساخته و حذف می‌شود.
+- ذخیره فقط فیلدهایی را می‌نویسد که تغییر داده‌اید. اگر تنظیمی بعد از باز شدن صفحه جای دیگری عوض شده باشد، ذخیره با پیام *Reload the page and try again* رد می‌شود تا مقدار جدیدتر بازنویسی نشود.
+- ردیف Client ها تغییرِ انجام‌شده از جای دیگر را فوراً نشان می‌دهد؛ ردیف realm حداکثر ظرف یک دقیقه.
+- حذف یک ردیف تنظیمات Client را دست نمی‌زند و ردیف با تغییر بعدی Client برمی‌گردد.
 
 #### راه‌اندازی جایگزین AD FS از صفر
 
