@@ -581,8 +581,15 @@ factor at the browser, can let OTP accounts through here as well:
 kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.allow-password-only"=true'
 ```
 
-The usual arrangement is a dedicated service account for the SDK, with no second factor, and the
-setting left off.
+The usual arrangement is a dedicated service account for the SDK, with no second factor and no
+pending required action, and the setting left off.
+
+> [!IMPORTANT]
+> For Dynamics 365, the service account must be a **directory account that is also a CRM user**,
+> not a user created in Keycloak. Dynamics 365 finds the user by `primarysid`, the account's SID in
+> Active Directory, and a Keycloak-only user has none: the token is issued but CRM answers
+> "user not found". Let the account arrive through LDAP like any other user; its password is its
+> directory password.
 
 Failures come back as SOAP faults. They are deliberately coarse — a caller learns the request was
 refused, not whether the user exists or which relying party is registered. Realm brute force
@@ -1506,7 +1513,10 @@ POST /realms/{realm}/protocol/wsfed/usernamemixed
 kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.allow-password-only"=true'
 ```
 
-روال معمول یک حساب سرویس اختصاصی برای SDK بدون فاکتور دوم است و این تنظیم خاموش می‌ماند.
+روال معمول یک حساب سرویس اختصاصی برای SDK است، بدون فاکتور دوم و بدون Required Action در انتظار، و این تنظیم خاموش می‌ماند.
+
+> [!IMPORTANT]
+> برای Dynamics 365 این حساب سرویس باید **یک حساب واقعی در Directory باشد که در CRM هم کاربر است**، نه کاربری که داخل Keycloak ساخته شود. Dynamics 365 کاربر را با `primarysid`، یعنی SID حساب در Active Directory، پیدا می‌کند و کاربر محلی Keycloak SID ندارد: توکن صادر می‌شود ولی CRM پاسخ «user not found» می‌دهد. بگذارید حساب مثل بقیه‌ی کاربران از LDAP بیاید؛ رمزش همان رمز Directory است.
 
 خطاها به شکل SOAP Fault برمی‌گردند و عمداً کلی هستند: فراخوان می‌فهمد درخواست رد شده، نه اینکه کاربر وجود دارد یا کدام Relying Party ثبت شده است. محافظت Brute Force خود realm روی این Endpoint اعمال می‌شود و هر تلاش به‌عنوان یک Login Event ثبت می‌گردد.
 
