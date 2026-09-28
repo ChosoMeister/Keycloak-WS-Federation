@@ -9,6 +9,12 @@ import org.keycloak.storage.ldap.idm.model.LDAPObject;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
 import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapper;
 
+import org.keycloak.models.utils.UserModelDelegate;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import java.util.Collections;
 import java.util.Set;
 
@@ -81,12 +87,45 @@ public class ActiveDirectorySidLDAPStorageMapper extends AbstractLDAPStorageMapp
         // A SID is issued by Active Directory when the account is created there. Nothing to write.
     }
 
+    /**
+     * Serves the SID straight from the directory entry on every read, without writing it to the
+     * user. Writing here failed every sign-in on a READ_ONLY provider, the usual configuration for
+     * Active Directory, where the user is wrapped read-only. Reading it like this also covers users
+     * imported before the mapper existed, the way the stock mapper's "always read value from LDAP"
+     * does.
+     */
     @Override
     public UserModel proxy(LDAPObject ldapUser, UserModel delegate, RealmModel realm) {
-        // Keeps the value current for users imported before this mapper existed, and for
-        // directories where the SID is only read at login time.
-        copySid(ldapUser, delegate);
-        return delegate;
+        final String attribute = userModelAttribute();
+        final String sid = readSid(ldapUser);
+        if (attribute == null || attribute.isBlank()) {
+            return delegate;
+        }
+        return new UserModelDelegate(delegate) {
+            @Override
+            public String getFirstAttribute(String name) {
+                return attribute.equalsIgnoreCase(name) ? sid : super.getFirstAttribute(name);
+            }
+
+            @Override
+            public Stream<String> getAttributeStream(String name) {
+                if (attribute.equalsIgnoreCase(name)) {
+                    return sid == null ? Stream.empty() : Stream.of(sid);
+                }
+                return super.getAttributeStream(name);
+            }
+
+            @Override
+            public Map<String, List<String>> getAttributes() {
+                Map<String, List<String>> attributes = new HashMap<>(super.getAttributes());
+                if (sid == null) {
+                    attributes.remove(attribute);
+                } else {
+                    attributes.put(attribute, List.of(sid));
+                }
+                return attributes;
+            }
+        };
     }
 
     /**
