@@ -265,7 +265,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-3`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-4`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
 
 #### 2C. Existing Kubernetes deployment
 
@@ -273,7 +273,7 @@ Use the immutable image produced in the previous step; do not mount or inject th
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-3
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-4
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -289,7 +289,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-3
+  image: registry.example.com/keycloak-wsfed:26.7.0-4
   startOptimized: true
 ```
 
@@ -338,17 +338,57 @@ For a direct installation, stop Keycloak, remove the new JAR, restore `keycloak-
 
 #### Admin console pages
 
-The stock client pages have no field for most WS-Federation settings. The extension adds two pages
-to the admin console that edit them, so they do not have to be set with kcadm:
+The stock client pages have no field for most WS-Federation settings; the client's **Advanced** tab
+shows only the text `advancedSettingsWsfed`. The extension adds two pages to the admin console that
+edit these settings, so they do not have to be set with kcadm.
 
-| Page | Address | What it edits |
+> [!IMPORTANT]
+> **The pages are not in the left-hand menu and not among a client's tabs.** Open them by their
+> address and bookmark it. Keycloak lists extension pages in the menu only when its experimental
+> `declarative-ui` feature is enabled, and nothing here needs that feature.
+
+The address is the admin console address followed by `#/{realm}/page-section/{page}`:
+
+```text
+https://keycloak.example.com/admin/master/console/#/production/page-section/WS-Federation%20clients
+https://keycloak.example.com/admin/master/console/#/production/page-section/WS-Federation%20realm
+```
+
+Replace `keycloak.example.com` with your host and `production` with the realm that holds the
+WS-Federation clients. `master` is the realm you sign in to the console with; change it only if you
+administer from another realm. `%20` is the space in the page name. `scripts/configure-client.sh`
+prints both addresses for the realm it configures.
+
+To change a client's settings:
+
+1. Open the **WS-Federation clients** address. It lists every WS-Federation client of the realm.
+2. Click the client's id to open its form.
+3. Change what you need and click **Save**.
+
+To change the realm's settings, open the **WS-Federation realm** address, click the realm's name,
+change and **Save**.
+
+**WS-Federation clients**, one entry per client:
+
+| Field | Client attribute | Use |
 |---|---|---|
-| WS-Federation clients | `/admin/master/console/#/{realm}/page-section/WS-Federation%20clients` | Per client: token format, key name (`NONE` for WIF/.NET), token lifetime (follow the session or fixed seconds), password sign-in for active WS-Trust, JWT/x5t, encryption and key size, sign-out cleanup URL |
-| WS-Federation realm | `/admin/master/console/#/{realm}/page-section/WS-Federation%20realm` | Active WS-Trust on or off, OTP accounts with a password only, announcing WS-Trust, metadata claim types |
+| Token format | `wsfed.saml_assertion_token_format` | SAML 2.0 or SAML 1.1 |
+| Key name in signature | `saml.server.signature.keyinfo.xmlSigKeyInfoKeyNameTransformer` | `NONE` for WIF/.NET relying parties such as Dynamics 365; with a key name they fail with ID4037 |
+| Token lifetime follows the Keycloak session | `wsfed.token.lifespan.from-session` | Token lasts as long as the SSO session; without a lifetime the user is signed out after about a minute |
+| Fixed token lifetime (seconds) | `saml.assertion.lifespan` | A fixed lifetime; wins over following the session |
+| Allow password sign-in (active WS-Trust) | Direct access grants | Needed for the Dynamics 365 SDK; the browser sign-in is not affected |
+| Issue a JWT instead of SAML / Include x5t | `wsfed.jwt`, `wsfed.x5t` | JWT in place of a SAML assertion |
+| Encrypt assertions / Encryption certificate / Encryption key size | `saml.encrypt`, `saml.encryption.certificate`, `wsfed.encryption.key-size` | Encrypted SAML 2.0 assertion |
+| Sign-out cleanup URL | `wsfed.logout.url` | Where `wsignoutcleanup1.0` goes; empty uses the first valid redirect URI |
 
-Replace `master` with the realm you administer from if it is not `master`. The pages are reached by
-their address: Keycloak lists extension pages in the navigation only when the experimental
-`declarative-ui` feature is enabled, and nothing here needs it.
+**WS-Federation realm**, one entry per realm:
+
+| Field | Realm attribute | Use |
+|---|---|---|
+| Active WS-Trust endpoint | `wsfed.ws-trust.enabled` | Serves `/usernamemixed` and `/mex` for the SDK |
+| Accept OTP accounts with a password only | `wsfed.ws-trust.allow-password-only` | Leave off; use a service account without OTP instead |
+| Announce WS-Trust in metadata | `wsfed.metadata.announce-ws-trust` | Only for a relying party that needs the namespaces without the endpoint |
+| Claim types in metadata | `wsfed.metadata.claim-types` | Empty means UPN, primary SID and Name |
 
 The settings stay where they always were, in realm and client attributes, so kcadm, the scripts
 and the pages all agree:
@@ -372,13 +412,13 @@ on-premises, go through them in this order; every step is idempotent and can be 
 | 3 | Confirm the `wsfed` client type appears | [What appears in the Admin Console?](#what-appears-in-the-admin-console) |
 | 4 | Set **Unmanaged Attributes** to *Enabled* and add LDAP user federation for the directory | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
 | 5 | Create the client with `scripts/configure-client.sh`; `WSFED_CLIENT_ID` is exactly the relying party's `wtrealm` | [Keycloak as a WS-Federation Identity Provider](#keycloak-as-a-ws-federation-identity-provider) |
-| 6 | Drop `KeyName` from signatures for WIF/.NET relying parties (`NONE`) | [Naming the signing key](#naming-the-signing-key-in-the-signature) |
-| 7 | Set the token lifetime: follow the Keycloak session, or a fixed number of seconds | [Token lifetime](#token-lifetime) |
+| 6 | Drop `KeyName` from signatures for WIF/.NET relying parties (`NONE`) | [Console page](#admin-console-pages) *Key name in signature*, or [kcadm](#naming-the-signing-key-in-the-signature) |
+| 7 | Set the token lifetime: follow the Keycloak session, or a fixed number of seconds | [Console page](#admin-console-pages) *Token lifetime…*, or [kcadm](#token-lifetime) |
 | 8 | Configure the UPN, primary SID and Name claims with `scripts/configure-ad-claims.sh` | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
 | 9 | **Verify the claims with a real directory account** | [Verifying with a real account](#verifying-the-claims-with-a-real-account) |
 | 10 | Give the relying party the metadata URL `/realms/{realm}/protocol/wsfed/descriptor` | [Federation metadata](#federation-metadata-for-ws-federation-relying-parties) |
-| 11 | Only for clients without a browser (for example the Dynamics 365 SDK): enable active WS-Trust, turn on Direct access grants on the client, use a service account without OTP | [Active WS-Trust](#active-ws-trust-for-clients-without-a-browser) |
-| 12 | Optional: encryption, sign-out addresses | [Encryption and sign-out](#encryption-and-sign-out-cleanup) |
+| 11 | Only for clients without a browser (for example the Dynamics 365 SDK): enable active WS-Trust, allow password sign-in on the client, use a service account without OTP | [Console pages](#admin-console-pages) *Active WS-Trust endpoint* and *Allow password sign-in*, or [kcadm](#active-ws-trust-for-clients-without-a-browser) |
+| 12 | Optional: encryption, sign-out addresses | [Console page](#admin-console-pages), or [kcadm](#encryption-and-sign-out-cleanup) |
 
 When something fails, the [troubleshooting](#troubleshooting) table maps each symptom to its step.
 
@@ -823,6 +863,7 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | Provider works with `start-dev` but not `start --optimized` | Re-run `kc.sh build` after copying the JAR and rebuild the final container image |
 | Slow production startup | Compare an identically built baseline, database migrations, cache topology, DNS/TLS, mounted storage, and JVM limits; do not compare first-build time with optimized startup |
 | Old behaviour after replacing the JAR | The container was not rebuilt and recreated (`docker compose up -d --build --force-recreate`) |
+| Cannot find the WS-Federation settings in the console; the client's Advanced tab shows only `advancedSettingsWsfed` | The settings are on two pages opened by address, not in the menu or the client's tabs; see [Admin console pages](#admin-console-pages) |
 | No LDAP user can sign in; log shows `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` | The running server does not have the extension (or has an older one) while the SID mapper exists; remove the mapper or deploy the JAR, see [Rollback](#4-rollback) |
 | Token issued but carries no claims | **Unmanaged Attributes** is disabled in the realm |
 | `ID4037` at the relying party | The signature carries `KeyName`; set the key name transformer to `NONE` on that client |
@@ -1173,7 +1214,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-3` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-4` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
 
 #### ۲-ج. استقرار موجود Kubernetes
 
@@ -1181,7 +1222,7 @@ Image را Build و scan کرده و با یک tag تغییرناپذیر مان
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-3
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-4
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -1197,7 +1238,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-3
+  image: registry.example.com/keycloak-wsfed:26.7.0-4
   startOptimized: true
 ```
 
@@ -1241,14 +1282,49 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 
 #### صفحه‌های کنسول مدیریت
 
-صفحه‌های پیش‌فرض Client برای بیشتر تنظیمات WS-Federation فیلدی ندارند. افزونه دو صفحه به کنسول مدیریت اضافه می‌کند تا لازم نباشد این تنظیمات با kcadm ست شوند:
+صفحه‌های پیش‌فرض Client برای بیشتر تنظیمات WS-Federation فیلدی ندارند؛ تب **Advanced** کلاینت فقط متن `advancedSettingsWsfed` را نشان می‌دهد. افزونه دو صفحه به کنسول مدیریت اضافه می‌کند تا این تنظیمات بدون kcadm ویرایش شوند.
 
-| صفحه | آدرس | چه چیزی را ویرایش می‌کند |
+> [!IMPORTANT]
+> **این صفحه‌ها در منوی سمت چپ و در تب‌های Client نیستند.** با آدرسشان باز می‌شوند؛ آدرس را بوکمارک کنید. Keycloak صفحه‌های افزونه را فقط وقتی قابلیت آزمایشی `declarative-ui` روشن باشد در منو نشان می‌دهد، و اینجا به آن نیازی نیست.
+
+آدرس برابر است با آدرس کنسول مدیریت و بعد `#/{realm}/page-section/{page}`:
+
+```text
+https://keycloak.example.com/admin/master/console/#/production/page-section/WS-Federation%20clients
+https://keycloak.example.com/admin/master/console/#/production/page-section/WS-Federation%20realm
+```
+
+به‌جای `keycloak.example.com` آدرس سرور خود و به‌جای `production` نام realm ی را بگذارید که Client های WS-Federation در آن هستند. `master` همان realm ی است که با آن وارد کنسول می‌شوید؛ فقط اگر از realm دیگری مدیریت می‌کنید عوضش کنید. `%20` همان فاصله‌ی داخل نام صفحه است. `scripts/configure-client.sh` هر دو آدرس را برای همان realm چاپ می‌کند.
+
+برای تغییر تنظیمات یک Client:
+
+1. آدرس **WS-Federation clients** را باز کنید؛ همه‌ی Client های WS-Federation آن realm فهرست شده‌اند.
+2. روی شناسه‌ی Client کلیک کنید تا فرمش باز شود.
+3. تغییر دهید و **Save** بزنید.
+
+برای تنظیمات realm، آدرس **WS-Federation realm** را باز کنید، روی نام realm کلیک کنید، تغییر دهید و **Save** بزنید.
+
+**WS-Federation clients** — یک ردیف برای هر Client:
+
+| فیلد | Attribute کلاینت | کاربرد |
 |---|---|---|
-| WS-Federation clients | `/admin/master/console/#/{realm}/page-section/WS-Federation%20clients` | برای هر Client: فرمت توکن، نام کلید در امضا (`NONE` برای WIF/.NET)، طول عمر توکن (دنبال کردن سشن یا عدد ثابت)، ورود با رمز برای WS-Trust فعال، JWT/x5t، رمزنگاری و طول کلید، آدرس پاک‌سازی خروج |
-| WS-Federation realm | `/admin/master/console/#/{realm}/page-section/WS-Federation%20realm` | روشن/خاموش WS-Trust فعال، پذیرش حساب‌های OTP با رمز تنها، اعلام WS-Trust، Claim type های Metadata |
+| Token format | `wsfed.saml_assertion_token_format` | SAML 2.0 یا SAML 1.1 |
+| Key name in signature | `saml.server.signature.keyinfo.xmlSigKeyInfoKeyNameTransformer` | `NONE` برای Relying Party های WIF/.NET مثل Dynamics 365؛ با KeyName خطای ID4037 می‌گیرند |
+| Token lifetime follows the Keycloak session | `wsfed.token.lifespan.from-session` | عمر توکن به اندازه‌ی سشن SSO؛ بدون تنظیم طول عمر، کاربر حدود یک دقیقه بعد خارج می‌شود |
+| Fixed token lifetime (seconds) | `saml.assertion.lifespan` | طول عمر ثابت؛ بر دنبال کردن سشن اولویت دارد |
+| Allow password sign-in (active WS-Trust) | Direct access grants | برای SDK دی۳۶۵ لازم است؛ روی ورود مرورگری اثری ندارد |
+| Issue a JWT instead of SAML / Include x5t | `wsfed.jwt`، `wsfed.x5t` | JWT به‌جای Assertion از نوع SAML |
+| Encrypt assertions / Encryption certificate / Encryption key size | `saml.encrypt`، `saml.encryption.certificate`، `wsfed.encryption.key-size` | Assertion رمزشده‌ی SAML 2.0 |
+| Sign-out cleanup URL | `wsfed.logout.url` | مقصد `wsignoutcleanup1.0`؛ خالی یعنی اولین Valid redirect URI |
 
-اگر از realm دیگری غیر از `master` مدیریت می‌کنید، `master` را جایگزین کنید. این صفحه‌ها با آدرسشان باز می‌شوند: Keycloak صفحه‌های افزونه را فقط وقتی قابلیت آزمایشی `declarative-ui` روشن باشد در منو نشان می‌دهد، و اینجا به آن نیازی نیست.
+**WS-Federation realm** — یک ردیف برای هر realm:
+
+| فیلد | Attribute ی realm | کاربرد |
+|---|---|---|
+| Active WS-Trust endpoint | `wsfed.ws-trust.enabled` | سرو کردن `/usernamemixed` و `/mex` برای SDK |
+| Accept OTP accounts with a password only | `wsfed.ws-trust.allow-password-only` | خاموش بماند؛ به‌جایش حساب سرویس بدون OTP بسازید |
+| Announce WS-Trust in metadata | `wsfed.metadata.announce-ws-trust` | فقط برای Relying Party ای که Namespace ها را بدون Endpoint لازم دارد |
+| Claim types in metadata | `wsfed.metadata.claim-types` | خالی یعنی UPN، Primary SID و Name |
 
 تنظیمات همان‌جایی می‌مانند که همیشه بوده‌اند، یعنی Attribute های realm و Client؛ پس kcadm، اسکریپت‌ها و این صفحه‌ها همیشه هم‌خوان‌اند:
 
@@ -1268,13 +1344,13 @@ kubectl -n identity rollout status deployment/keycloak --timeout=10m
 | ۳ | اطمینان از دیده‌شدن نوع Client با نام `wsfed` | «چه چیزی در Admin Console دیده می‌شود؟» |
 | ۴ | روشن کردن **Unmanaged Attributes** و افزودن LDAP User Federation | «Claim های Active Directory» |
 | ۵ | ساخت Client با `scripts/configure-client.sh`؛ `WSFED_CLIENT_ID` دقیقاً همان `wtrealm` است | «استفاده از Keycloak به‌عنوان ارائه‌دهنده WS-Federation» |
-| ۶ | حذف `KeyName` از امضا برای Relying Party های WIF/.NET (`NONE`) | «نام‌گذاری کلید امضا در Signature» |
-| ۷ | تعیین طول عمر توکن: دنبال کردن سشن Keycloak یا عدد ثابت | «طول عمر توکن» |
+| ۶ | حذف `KeyName` از امضا برای Relying Party های WIF/.NET (`NONE`) | «صفحه‌های کنسول مدیریت»: فیلد *Key name in signature*، یا kcadm در «نام‌گذاری کلید امضا در Signature» |
+| ۷ | تعیین طول عمر توکن: دنبال کردن سشن Keycloak یا عدد ثابت | «صفحه‌های کنسول مدیریت»: فیلد *Token lifetime…*، یا kcadm در «طول عمر توکن» |
 | ۸ | تنظیم Claim های UPN، Primary SID و Name با `scripts/configure-ad-claims.sh` | «Claim های Active Directory» |
 | ۹ | **تأیید Claim ها با یک کاربر واقعی AD** | «تأیید Claim ها با کاربر واقعی» |
 | ۱۰ | دادن آدرس Metadata یعنی `/realms/{realm}/protocol/wsfed/descriptor` به Relying Party | «Federation Metadata» |
-| ۱۱ | فقط برای کلاینت بدون مرورگر (مثل SDK دی۳۶۵): روشن کردن WS-Trust فعال، روشن کردن Direct access grants روی Client، و حساب سرویس بدون OTP | «WS-Trust فعال برای کلاینت‌های بدون مرورگر» |
-| ۱۲ | اختیاری: رمزنگاری و آدرس‌های خروج | «رمزنگاری و پاک‌سازی خروج» |
+| ۱۱ | فقط برای کلاینت بدون مرورگر (مثل SDK دی۳۶۵): روشن کردن WS-Trust فعال، اجازه‌ی ورود با رمز روی Client، و حساب سرویس بدون OTP | «صفحه‌های کنسول مدیریت»: فیلدهای *Active WS-Trust endpoint* و *Allow password sign-in*، یا kcadm در «WS-Trust فعال برای کلاینت‌های بدون مرورگر» |
+| ۱۲ | اختیاری: رمزنگاری و آدرس‌های خروج | «صفحه‌های کنسول مدیریت»، یا kcadm در «رمزنگاری و پاک‌سازی خروج» |
 
 اگر جایی شکست خورد، جدول «عیب‌یابی» هر نشانه را به گام مربوطش وصل می‌کند.
 
@@ -1617,6 +1693,7 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | کارکرد با `start-dev` و شکست با `start --optimized` | پس از کپی JAR دوباره `kc.sh build` اجرا و image نهایی بازسازی شود |
 | Startup کند در Production | baseline کاملاً مشابه، migration دیتابیس، cache، DNS/TLS، storage و محدودیت JVM بررسی شود؛ زمان build اولیه با startup بهینه مقایسه نشود |
 | رفتار قدیمی بعد از تعویض JAR | کانتینر بازسازی و recreate نشده (`docker compose up -d --build --force-recreate`) |
+| تنظیمات WS-Federation در کنسول پیدا نمی‌شود؛ تب Advanced کلاینت فقط `advancedSettingsWsfed` نشان می‌دهد | تنظیمات در دو صفحه‌اند که با آدرس باز می‌شوند، نه در منو یا تب‌های Client؛ بخش «صفحه‌های کنسول مدیریت» |
 | هیچ کاربر LDAP نمی‌تواند وارد شود و لاگ `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` دارد | سرور در حال اجرا افزونه (یا نسخه‌ی جدید آن) را ندارد ولی Mapper مربوط به SID وجود دارد؛ Mapper را حذف یا JAR را مستقر کنید (بخش Rollback) |
 | توکن صادر می‌شود ولی هیچ Claim ندارد | **Unmanaged Attributes** در realm خاموش است |
 | خطای `ID4037` در Relying Party | امضا `KeyName` دارد؛ Key name transformer را روی همان Client برابر `NONE` بگذارید |

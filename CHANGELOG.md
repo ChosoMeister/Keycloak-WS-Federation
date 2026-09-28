@@ -3,8 +3,10 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
-## Unreleased
+## 26.7.0-4
 
+- **Where to find the console pages** is spelled out in the README (both languages), the setup
+  path and the troubleshooting table, and `configure-client.sh` prints both page addresses.
 - **Admin console pages for the WS-Federation settings.** *WS-Federation clients* edits each
   client's token format, key name, lifetime, password sign-in, JWT, encryption and sign-out cleanup
   URL; *WS-Federation realm* edits the active WS-Trust and metadata settings. They write the same
