@@ -129,8 +129,43 @@ fi
 existing_ldap_mappers=$("${KCADM}" get components -r "${WSFED_REALM}" \
   -q "parent=${ldap_id}" -q "type=org.keycloak.storage.ldap.mappers.LDAPStorageMapper")
 
+# Another mapper, whatever its name, that already fills the same Keycloak user attribute. Two
+# mappers on one attribute make every login fail with "Duplicate key" in the user profile.
+other_mapper_for() {
+  local name="$1" user_attribute="$2"
+  jq -c --arg n "$name" --arg ua "$user_attribute" \
+    '[.[] | select(.name != $n and ((.config["user.model.attribute"] // [])[0] // "") == $ua)] | first // empty' \
+    <<<"${existing_ldap_mappers}"
+}
+
+# Decides, before anything is changed, whether an existing mapper can serve an attribute. A mapper
+# reading the same directory attribute is reused; one reading a different attribute is a conflict
+# the administrator has to resolve, so the script stops without touching the realm.
+check_ldap_mapper() {
+  local name="$1" user_attribute="$2" ldap_attribute="$3" provider="$4" other other_name other_la other_provider
+  other=$(other_mapper_for "$name" "$user_attribute")
+  [[ -z "$other" ]] && return 0
+  other_name=$(jq -r '.name' <<<"$other")
+  other_la=$(jq -r '(.config["ldap.attribute"] // [""])[0]' <<<"$other")
+  other_provider=$(jq -r '.providerId' <<<"$other")
+  # LDAP attribute names are case-insensitive
+  if [[ "$(tr '[:upper:]' '[:lower:]' <<<"$other_la")" == "$(tr '[:upper:]' '[:lower:]' <<<"$ldap_attribute")" \
+        && "$other_provider" == "$provider" ]]; then
+    return 0
+  fi
+  cat >&2 <<EOF
+
+ERROR: the LDAP mapper "${other_name}" (${other_provider}) already fills the user attribute
+  ${user_attribute} from ${other_la:-<unset>}. This script would fill it from ${ldap_attribute} with ${provider}.
+  Two mappers on one attribute break every login, so nothing was changed.
+  Delete or change "${other_name}", or point this script at the same directory attribute, and run again.
+
+EOF
+  exit 1
+}
+
 upsert_ldap_mapper() {
-  local name="$1" user_attribute="$2" ldap_attribute="$3" payload existing_id
+  local name="$1" user_attribute="$2" ldap_attribute="$3" payload existing_id other
 
   # always.read.value.from.ldap keeps the value authoritative in the directory, so already
   # imported users pick it up on their next login without a federation re-sync.
@@ -144,8 +179,16 @@ upsert_ldap_mapper() {
                "is.mandatory.in.ldap": ["false"]}}')
 
   existing_id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"${existing_ldap_mappers}")
+  other=$(other_mapper_for "$name" "$user_attribute")
 
-  if [[ -n "${existing_id}" ]]; then
+  if [[ -n "${other}" ]]; then
+    # check_ldap_mapper has already confirmed it reads the same directory attribute.
+    echo "  using existing LDAP mapper $(jq -r .name <<<"$other") (${ldap_attribute} -> ${user_attribute})"
+    if [[ -n "${existing_id}" ]]; then
+      "${KCADM}" delete "components/${existing_id}" -r "${WSFED_REALM}"
+      echo "  removed duplicate LDAP mapper ${name}, created by an earlier run"
+    fi
+  elif [[ -n "${existing_id}" ]]; then
     printf '%s' "${payload}" | "${KCADM}" update "components/${existing_id}" -r "${WSFED_REALM}" -f -
     echo "  updated LDAP mapper ${name} (${ldap_attribute} -> ${user_attribute})"
   else
@@ -157,7 +200,7 @@ upsert_ldap_mapper() {
 # The SID needs this extension's own mapper rather than the stock attribute mapper, which would
 # store the raw binary base64 encoded.
 upsert_sid_mapper() {
-  local name="$1" user_attribute="$2" ldap_attribute="$3" payload existing_id
+  local name="$1" user_attribute="$2" ldap_attribute="$3" payload existing_id other
 
   payload=$(jq -n \
     --arg name "$name" --arg parent "${ldap_id}" \
@@ -167,8 +210,15 @@ upsert_sid_mapper() {
       config: {"user.model.attribute": [$ua], "ldap.attribute": [$la]}}')
 
   existing_id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"${existing_ldap_mappers}")
+  other=$(other_mapper_for "$name" "$user_attribute")
 
-  if [[ -n "${existing_id}" ]]; then
+  if [[ -n "${other}" ]]; then
+    echo "  using existing SID mapper $(jq -r .name <<<"$other") (${ldap_attribute} -> ${user_attribute})"
+    if [[ -n "${existing_id}" ]]; then
+      "${KCADM}" delete "components/${existing_id}" -r "${WSFED_REALM}"
+      echo "  removed duplicate SID mapper ${name}, created by an earlier run"
+    fi
+  elif [[ -n "${existing_id}" ]]; then
     printf '%s' "${payload}" | "${KCADM}" update "components/${existing_id}" -r "${WSFED_REALM}" -f -
     echo "  updated SID mapper ${name} (${ldap_attribute} -> ${user_attribute})"
   else
@@ -187,6 +237,32 @@ EOF
     echo "  created SID mapper ${name} (${ldap_attribute} -> ${user_attribute})"
   fi
 }
+
+# Keycloak accepts a mapper of a type it does not know, and then fails every LDAP lookup in the
+# realm. Refuse to create the SID mapper unless the running server has its provider.
+# Read fully before matching: grep -q would close the pipe early and, under pipefail, fail the check.
+server_info=$("${KCADM}" get serverinfo)
+if ! grep -q '"wsfed-ad-primary-sid-mapper"' <<<"${server_info}"; then
+  cat >&2 <<EOF
+
+ERROR: the running Keycloak does not have the wsfed-ad-primary-sid-mapper provider.
+
+  Creating the mapper now would stop every LDAP user from signing in. Deploy the extension JAR
+  (one keycloak-wsfed.jar in providers/, image rebuilt, container recreated), confirm
+    kcadm.sh get serverinfo | grep -c wsfed-ad-primary-sid-mapper
+  prints a number above 0, and run this script again. Nothing was changed.
+
+EOF
+  exit 1
+fi
+
+# Check every attribute before changing any, so a conflict leaves the realm as it was.
+check_ldap_mapper 'wsfed-upn'                  "${USER_ATTR_UPN}"     "${LDAP_UPN_ATTRIBUTE}"     user-attribute-ldap-mapper
+check_ldap_mapper 'wsfed-windows-account-name' "${USER_ATTR_ACCOUNT}" "${LDAP_ACCOUNT_ATTRIBUTE}" user-attribute-ldap-mapper
+check_ldap_mapper 'wsfed-primary-sid'          "${USER_ATTR_SID}"     "${LDAP_SID_ATTRIBUTE}"     wsfed-ad-primary-sid-mapper
+if [[ "${LDAP_NAME_ATTRIBUTE}" != "${LDAP_ACCOUNT_ATTRIBUTE}" ]]; then
+  check_ldap_mapper 'wsfed-name' "${USER_ATTR_NAME}" "${LDAP_NAME_ATTRIBUTE}" user-attribute-ldap-mapper
+fi
 
 echo "LDAP provider: ${LDAP_ALIAS}"
 upsert_ldap_mapper 'wsfed-upn'                  "${USER_ATTR_UPN}"     "${LDAP_UPN_ATTRIBUTE}"

@@ -3,6 +3,22 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
+## 26.7.0-5
+
+- **The SID mapper no longer breaks sign-in on a read-only LDAP provider.** It wrote the SID onto
+  the user at every login, and a `READ_ONLY` provider with import off refuses any write, so every
+  directory login failed with `ReadOnlyException`. The SID is now served from the directory entry
+  when read, the way the stock mapper's *always read value from LDAP* works, and never written.
+- **`configure-ad-claims.sh` no longer creates a second mapper on an attribute that already has
+  one.** A mapper of another name filling the same user attribute from the same directory
+  attribute is reused, and a duplicate left by an earlier run is removed; two mappers on one
+  attribute failed every login with `Duplicate key`. A mapper filling it from a different
+  directory attribute stops the script before anything changes.
+- **`configure-ad-claims.sh` refuses to create the SID mapper on a server that lacks it**, which
+  would stop every LDAP login.
+- README: the empty *Capability config* wizard step for `wsfed`, and a console error after
+  replacing the extension, are explained in the troubleshooting table.
+
 ## 26.7.0-4
 
 - **Where to find the console pages** is spelled out in the README (both languages), the setup

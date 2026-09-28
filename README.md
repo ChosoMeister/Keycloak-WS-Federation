@@ -265,7 +265,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-4`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-5`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
 
 #### 2C. Existing Kubernetes deployment
 
@@ -273,7 +273,7 @@ Use the immutable image produced in the previous step; do not mount or inject th
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-4
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-5
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -289,7 +289,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-4
+  image: registry.example.com/keycloak-wsfed:26.7.0-5
   startOptimized: true
 ```
 
@@ -411,7 +411,7 @@ on-premises, go through them in this order; every step is idempotent and can be 
 | 2 | Build and deploy the JAR, then `kc.sh build` (container: rebuild the image and recreate the container) | [Installation](#installation), [Container image](#container-image) |
 | 3 | Confirm the `wsfed` client type appears | [What appears in the Admin Console?](#what-appears-in-the-admin-console) |
 | 4 | Set **Unmanaged Attributes** to *Enabled* and add LDAP user federation for the directory | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
-| 5 | Create the client with `scripts/configure-client.sh`; `WSFED_CLIENT_ID` is exactly the relying party's `wtrealm` | [Keycloak as a WS-Federation Identity Provider](#keycloak-as-a-ws-federation-identity-provider) |
+| 5 | Create the client with `scripts/configure-client.sh`; `WSFED_CLIENT_ID` is exactly the relying party's `wtrealm`. In the console's *Create client* wizard the *Capability config* step is empty for `wsfed`; click **Next** | [Keycloak as a WS-Federation Identity Provider](#keycloak-as-a-ws-federation-identity-provider) |
 | 6 | Drop `KeyName` from signatures for WIF/.NET relying parties (`NONE`) | [Console page](#admin-console-pages) *Key name in signature*, or [kcadm](#naming-the-signing-key-in-the-signature) |
 | 7 | Set the token lifetime: follow the Keycloak session, or a fixed number of seconds | [Console page](#admin-console-pages) *Token lifetime…*, or [kcadm](#token-lifetime) |
 | 8 | Configure the UPN, primary SID and Name claims with `scripts/configure-ad-claims.sh` | [Active Directory claims](#active-directory-claims-for-ad-fs-relying-parties) |
@@ -814,6 +814,21 @@ attributes in the user profile. The script warns when the realm would drop them.
 return it. Confirm it arrives for a real account, and otherwise point `WSFED_LDAP_ACCOUNT_ATTRIBUTE`
 at an attribute holding the `DOMAIN\user` form.
 
+The script is safe against a realm that already has mappers of its own:
+
+- **An existing mapper on the same user attribute is reused.** If the provider already has, say, a
+  mapper named `upn` filling `upn` from `userPrincipalName`, the script uses it instead of adding a
+  second one. Two mappers on one attribute make every login fail with `Duplicate key upn`; a
+  duplicate left by an earlier run of the script is removed.
+- **A conflict stops the script before anything changes.** An existing mapper that fills the same
+  user attribute from a *different* directory attribute is reported, and the realm is left as it was.
+- **The SID mapper is only created on a server that has it.** The script checks the running
+  Keycloak first, because a mapper of an unknown type stops every LDAP login.
+
+The SID mapper works with a `READ_ONLY` provider, with or without **Import users**, which is the
+usual Active Directory setup: it serves the SID from the directory entry and never writes it to the
+user.
+
 #### Verifying the claims with a real account
 
 None of the three intermediate user attributes exist in Active Directory itself; they are Keycloak
@@ -864,6 +879,10 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | Slow production startup | Compare an identically built baseline, database migrations, cache topology, DNS/TLS, mounted storage, and JVM limits; do not compare first-build time with optimized startup |
 | Old behaviour after replacing the JAR | The container was not rebuilt and recreated (`docker compose up -d --build --force-recreate`) |
 | Cannot find the WS-Federation settings in the console; the client's Advanced tab shows only `advancedSettingsWsfed` | The settings are on two pages opened by address, not in the menu or the client's tabs; see [Admin console pages](#admin-console-pages) |
+| Every LDAP login fails with `ReadOnlyException: ... attribute(ad_primary_sid)` | A release before 26.7.0-5 on a READ_ONLY provider with import off; upgrade. Until then delete the `wsfed-primary-sid` LDAP mapper |
+| Every LDAP login fails with `Duplicate key upn` (or another attribute) | Two LDAP mappers fill the same user attribute; delete one, or run `configure-ad-claims.sh` from 26.7.0-5, which removes its own duplicate |
+| The *Capability config* step of *Create client* is empty for `wsfed` | Expected; the console draws that step only for OpenID Connect. Click **Next** and set the options on the [console pages](#admin-console-pages) |
+| The console shows `Cannot read properties of undefined` (for example `helpText` or `id`) after the extension was replaced | The browser still holds the previous server's information; reload the console and sign in again |
 | No LDAP user can sign in; log shows `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` | The running server does not have the extension (or has an older one) while the SID mapper exists; remove the mapper or deploy the JAR, see [Rollback](#4-rollback) |
 | Token issued but carries no claims | **Unmanaged Attributes** is disabled in the realm |
 | `ID4037` at the relying party | The signature carries `KeyName`; set the key name transformer to `NONE` on that client |
@@ -1214,7 +1233,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-4` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-5` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
 
 #### ۲-ج. استقرار موجود Kubernetes
 
@@ -1222,7 +1241,7 @@ Image را Build و scan کرده و با یک tag تغییرناپذیر مان
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-4
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-5
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -1238,7 +1257,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-4
+  image: registry.example.com/keycloak-wsfed:26.7.0-5
   startOptimized: true
 ```
 
@@ -1343,7 +1362,7 @@ https://keycloak.example.com/admin/master/console/#/production/page-section/WS-F
 | ۲ | ساخت و استقرار JAR و سپس `kc.sh build` (در کانتینر: بازسازی image و recreate کانتینر) | «نصب» و «ساخت image کانتینر» |
 | ۳ | اطمینان از دیده‌شدن نوع Client با نام `wsfed` | «چه چیزی در Admin Console دیده می‌شود؟» |
 | ۴ | روشن کردن **Unmanaged Attributes** و افزودن LDAP User Federation | «Claim های Active Directory» |
-| ۵ | ساخت Client با `scripts/configure-client.sh`؛ `WSFED_CLIENT_ID` دقیقاً همان `wtrealm` است | «استفاده از Keycloak به‌عنوان ارائه‌دهنده WS-Federation» |
+| ۵ | ساخت Client با `scripts/configure-client.sh`؛ `WSFED_CLIENT_ID` دقیقاً همان `wtrealm` است. در ویزارد *Create client* کنسول، مرحله‌ی *Capability config* برای `wsfed` خالی است؛ **Next** بزنید | «استفاده از Keycloak به‌عنوان ارائه‌دهنده WS-Federation» |
 | ۶ | حذف `KeyName` از امضا برای Relying Party های WIF/.NET (`NONE`) | «صفحه‌های کنسول مدیریت»: فیلد *Key name in signature*، یا kcadm در «نام‌گذاری کلید امضا در Signature» |
 | ۷ | تعیین طول عمر توکن: دنبال کردن سشن Keycloak یا عدد ثابت | «صفحه‌های کنسول مدیریت»: فیلد *Token lifetime…*، یا kcadm در «طول عمر توکن» |
 | ۸ | تنظیم Claim های UPN، Primary SID و Name با `scripts/configure-ad-claims.sh` | «Claim های Active Directory» |
@@ -1653,6 +1672,14 @@ export WSFED_CLIENT_ID='urn:example:wsfed:rp'
 - از Keycloak 24، realm ویژگی‌هایی را که User Profile اعلام نکرده دور می‌ریزد. این Claim ها روی Unmanaged Attribute ها حرکت می‌کنند، پس **Realm settings → General → Unmanaged Attributes** را روی *Enabled* بگذارید یا سه Attribute را در User Profile تعریف کنید. اسکریپت در این حالت هشدار می‌دهد.
 - `msDS-PrincipalName` یک Attribute ساختگی (constructed) است و بعضی Directory ها آن را برنمی‌گردانند. برای یک حساب واقعی تأیید کنید و در غیر این صورت `WSFED_LDAP_ACCOUNT_ATTRIBUTE` را به Attribute ی با شکل `DOMAIN\user` اشاره دهید.
 
+اسکریپت در برابر realm ی که از قبل Mapper های خودش را دارد امن است:
+
+- **Mapper موجود روی همان User attribute دوباره استفاده می‌شود.** اگر Provider از قبل مثلاً Mapper ی به نام `upn` دارد که `upn` را از `userPrincipalName` پر می‌کند، اسکریپت از همان استفاده می‌کند و دومی نمی‌سازد. دو Mapper روی یک Attribute همه‌ی لاگین‌ها را با خطای `Duplicate key upn` از کار می‌اندازد؛ نسخه‌ی تکراری‌ای که یک اجرای قبلی اسکریپت ساخته باشد حذف می‌شود.
+- **تعارض، اسکریپت را قبل از هر تغییری متوقف می‌کند.** اگر Mapper موجود همان User attribute را از Attribute *دیگری* در Directory پر کند، گزارش می‌شود و realm دست‌نخورده می‌ماند.
+- **Mapper مربوط به SID فقط روی سروری ساخته می‌شود که آن را می‌شناسد.** اسکریپت اول Keycloak در حال اجرا را بررسی می‌کند، چون Mapper ی از نوع ناشناخته همه‌ی لاگین‌های LDAP را متوقف می‌کند.
+
+Mapper مربوط به SID با Provider ی از نوع `READ_ONLY` کار می‌کند، چه **Import users** روشن باشد چه خاموش، که حالت معمول Active Directory است: SID را از خود رکورد Directory می‌خواند و هرگز روی کاربر نمی‌نویسد.
+
 #### تأیید Claim ها با کاربر واقعی
 
 هیچ‌کدام از سه User attribute واسط در خود AD وجود ندارند؛ User attribute های Keycloak هستند که فقط وقتی یک LDAP mapper پرشان کند وجود دارند. بعد از اینکه یک کاربر AD یک بار وارد شد، ببینید Keycloak واقعاً چه خوانده است:
@@ -1694,6 +1721,10 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | Startup کند در Production | baseline کاملاً مشابه، migration دیتابیس، cache، DNS/TLS، storage و محدودیت JVM بررسی شود؛ زمان build اولیه با startup بهینه مقایسه نشود |
 | رفتار قدیمی بعد از تعویض JAR | کانتینر بازسازی و recreate نشده (`docker compose up -d --build --force-recreate`) |
 | تنظیمات WS-Federation در کنسول پیدا نمی‌شود؛ تب Advanced کلاینت فقط `advancedSettingsWsfed` نشان می‌دهد | تنظیمات در دو صفحه‌اند که با آدرس باز می‌شوند، نه در منو یا تب‌های Client؛ بخش «صفحه‌های کنسول مدیریت» |
+| همه‌ی لاگین‌های LDAP با `ReadOnlyException: ... attribute(ad_primary_sid)` شکست می‌خورند | نسخه‌ای قبل از 26.7.0-5 روی Provider ی `READ_ONLY` با Import خاموش؛ ارتقا دهید. تا آن موقع LDAP mapper ی `wsfed-primary-sid` را حذف کنید |
+| همه‌ی لاگین‌های LDAP با `Duplicate key upn` (یا Attribute دیگری) شکست می‌خورند | دو LDAP mapper یک User attribute را پر می‌کنند؛ یکی را حذف کنید، یا `configure-ad-claims.sh` نسخه‌ی 26.7.0-5 را اجرا کنید که نسخه‌ی تکراری خودش را حذف می‌کند |
+| مرحله‌ی *Capability config* در *Create client* برای `wsfed` خالی است | عادی است؛ کنسول این مرحله را فقط برای OpenID Connect می‌سازد. **Next** بزنید و گزینه‌ها را در «صفحه‌های کنسول مدیریت» تنظیم کنید |
+| کنسول بعد از تعویض افزونه خطای `Cannot read properties of undefined` (مثلاً `helpText` یا `id`) می‌دهد | مرورگر هنوز اطلاعات سرور قبلی را نگه داشته؛ کنسول را Reload کنید و دوباره وارد شوید |
 | هیچ کاربر LDAP نمی‌تواند وارد شود و لاگ `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` دارد | سرور در حال اجرا افزونه (یا نسخه‌ی جدید آن) را ندارد ولی Mapper مربوط به SID وجود دارد؛ Mapper را حذف یا JAR را مستقر کنید (بخش Rollback) |
 | توکن صادر می‌شود ولی هیچ Claim ندارد | **Unmanaged Attributes** در realm خاموش است |
 | خطای `ID4037` در Relying Party | امضا `KeyName` دارد؛ Key name transformer را روی همان Client برابر `NONE` بگذارید |
