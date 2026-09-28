@@ -5,6 +5,12 @@ This project uses the Keycloak version it targets as its own version, followed b
 
 ## Unreleased
 
+- **Admin console pages for the WS-Federation settings.** *WS-Federation clients* edits each
+  client's token format, key name, lifetime, password sign-in, JWT, encryption and sign-out cleanup
+  URL; *WS-Federation realm* edits the active WS-Trust and metadata settings. They write the same
+  realm and client attributes kcadm and the scripts use, save only changed fields, and refuse a save
+  from a page opened before the values last changed. Reached by address; the experimental
+  `declarative-ui` feature is not needed.
 - **The JAR is built as `keycloak-wsfed.jar`**, without the version in the file name, so copying a
   new build into `providers/` replaces the old one instead of leaving two side by side.
 - **README: rollback warning** for the `wsfed-ad-primary-sid-mapper` LDAP mapper, which stops every

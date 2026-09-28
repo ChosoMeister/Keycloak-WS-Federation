@@ -55,6 +55,13 @@ grep -q 'BEGIN CERTIFICATE' <<<"${broker_json}"
 
 echo "WS-Federation idempotent configuration test passed for realm ${REALM}."
 
+# --- Admin console pages ---------------------------------------------------------------------
+
+pages=$("${KCADM}" get components -r "${REALM}" -q type=org.keycloak.services.ui.extend.UiPageProvider)
+jq -e '[.[] | select(.providerId == "WS-Federation realm")] | length == 1' <<<"${pages}" >/dev/null
+jq -e --arg c "${WSFED_CLIENT_ID}" '[.[] | select(.providerId == "WS-Federation clients" and .config.clientId[0] == $c)] | length == 1' <<<"${pages}" >/dev/null
+echo "WS-Federation console pages present for realm ${REALM}."
+
 # --- Active WS-Trust end to end ---------------------------------------------------------------
 
 client_uuid=$(jq -r '.[0].id' <<<"${client_json}")
