@@ -265,7 +265,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-5`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
+Build, scan, tag, and push an immutable version, for example `registry.example.com/keycloak-wsfed:26.7.0-6`. Deploy that tag with the existing runtime environment, secrets, database, hostname, TLS, proxy, cache, and `start --optimized` arguments. Keycloak's official [container guide](https://www.keycloak.org/server/containers) also requires the provider to be copied before the build step.
 
 #### 2C. Existing Kubernetes deployment
 
@@ -273,7 +273,7 @@ Use the immutable image produced in the previous step; do not mount or inject th
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-5
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-6
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -289,7 +289,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-5
+  image: registry.example.com/keycloak-wsfed:26.7.0-6
   startOptimized: true
 ```
 
@@ -591,6 +591,31 @@ pending required action, and the setting left off.
 > "user not found". Let the account arrive through LDAP like any other user; its password is its
 > directory password.
 
+##### Proof keys for WCF clients (Dynamics 365 SDK)
+
+A WCF client, which is what the Dynamics 365 SDK uses, asks for a **symmetric proof key**
+(`KeyType` SymmetricKey) and sends every element of the relying party's policy template, such as
+`Claims`, `SignWith`, `EncryptWith` and `CanonicalizationAlgorithm`. Those elements are accepted
+and ignored. The token is then holder-of-key, as AD FS issues it:
+
+- the response carries server entropy and a P_SHA-1 computed key, from which the client derives
+  the key it signs its calls with;
+- the assertion's subject confirmation carries the same key, encrypted with the relying party's
+  certificate, so the relying party can recover it.
+
+This needs the relying party's certificate on the client: **Encryption certificate** on the
+[WS-Federation clients page](#admin-console-pages) (`saml.encryption.certificate`). *Encrypt
+assertions* does not have to be on. Dynamics 365 publishes the certificate in its own metadata:
+
+```bash
+curl -s https://crm.example.com/FederationMetadata/2007-06/FederationMetadata.xml \
+  | grep -o '<KeyDescriptor use="encryption">.*</KeyDescriptor>' | grep -o '<X509Certificate>[^<]*' | cut -d'>' -f2
+```
+
+Without it a symmetric key request is refused with *This relying party has no encryption
+certificate, so a proof key cannot be issued for it.* A request without `KeyType`, or with Bearer,
+still receives a bearer token.
+
 Failures come back as SOAP faults. They are deliberately coarse — a caller learns the request was
 refused, not whether the user exists or which relying party is registered. Realm brute force
 protection applies to the endpoint, and each attempt is recorded as a login event.
@@ -890,6 +915,9 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | Every LDAP login fails with `Duplicate key upn` (or another attribute) | Two LDAP mappers fill the same user attribute; delete one, or run `configure-ad-claims.sh` from 26.7.0-5, which removes its own duplicate |
 | The *Capability config* step of *Create client* is empty for `wsfed` | Expected; the console draws that step only for OpenID Connect. Click **Next** and set the options on the [console pages](#admin-console-pages) |
 | The console shows `Cannot read properties of undefined` (for example `helpText` or `id`) after the extension was replaced | The browser still holds the previous server's information; reload the console and sign in again |
+| SDK: `The request could not be processed.` (MSIS7069 at CRM) on a full WS-Trust request | A release before 26.7.0-6, which refused `Claims`, `SignWith`, `EncryptWith` and similar elements; upgrade |
+| SDK: `This relying party has no encryption certificate...` | Set the relying party's certificate on the [WS-Federation clients page](#admin-console-pages); see *Proof keys for WCF clients* |
+| Realm settings saved in the console turn WS-Trust (or another WS-Federation realm setting) off again | The console sends back the realm settings it loaded when it opened. Reload the console after changing the WS-Federation realm page |
 | No LDAP user can sign in; log shows `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` | The running server does not have the extension (or has an older one) while the SID mapper exists; remove the mapper or deploy the JAR, see [Rollback](#4-rollback) |
 | Token issued but carries no claims | **Unmanaged Attributes** is disabled in the realm |
 | `ID4037` at the relying party | The signature carries `KeyName`; set the key name transformer to `NONE` on that client |
@@ -1240,7 +1268,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-5` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
+Image را Build و scan کرده و با یک tag تغییرناپذیر مانند `registry.example.com/keycloak-wsfed:26.7.0-6` منتشر کنید. همان environment، secretها، دیتابیس، hostname، TLS، proxy، cache و آرگومان‌های `start --optimized` محیط فعلی را برای نسخه جدید حفظ کنید. [راهنمای رسمی Container در Keycloak](https://www.keycloak.org/server/containers) نیز تأکید می‌کند Provider باید قبل از مرحله Build کپی شود.
 
 #### ۲-ج. استقرار موجود Kubernetes
 
@@ -1248,7 +1276,7 @@ Image را Build و scan کرده و با یک tag تغییرناپذیر مان
 
 ```bash
 kubectl -n identity set image deployment/keycloak \
-  keycloak=registry.example.com/keycloak-wsfed:26.7.0-5
+  keycloak=registry.example.com/keycloak-wsfed:26.7.0-6
 
 kubectl -n identity rollout status deployment/keycloak --timeout=10m
 kubectl -n identity get pods
@@ -1264,7 +1292,7 @@ kind: Keycloak
 metadata:
   name: keycloak
 spec:
-  image: registry.example.com/keycloak-wsfed:26.7.0-5
+  image: registry.example.com/keycloak-wsfed:26.7.0-6
   startOptimized: true
 ```
 
@@ -1518,6 +1546,22 @@ kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.allow-password-onl
 > [!IMPORTANT]
 > برای Dynamics 365 این حساب سرویس باید **یک حساب واقعی در Directory باشد که در CRM هم کاربر است**، نه کاربری که داخل Keycloak ساخته شود. Dynamics 365 کاربر را با `primarysid`، یعنی SID حساب در Active Directory، پیدا می‌کند و کاربر محلی Keycloak SID ندارد: توکن صادر می‌شود ولی CRM پاسخ «user not found» می‌دهد. بگذارید حساب مثل بقیه‌ی کاربران از LDAP بیاید؛ رمزش همان رمز Directory است.
 
+##### کلید اثبات برای کلاینت‌های WCF (SDK دی۳۶۵)
+
+کلاینت WCF، که SDK دی۳۶۵ از آن استفاده می‌کند، یک **کلید اثبات متقارن** (`KeyType` برابر SymmetricKey) می‌خواهد و همه‌ی عناصر قالب Policy ی Relying Party را هم می‌فرستد، مثل `Claims`، `SignWith`، `EncryptWith` و `CanonicalizationAlgorithm`. این عناصر پذیرفته و نادیده گرفته می‌شوند. توکن در این حالت از نوع holder-of-key است، همان‌طور که AD FS صادر می‌کند:
+
+- پاسخ، Entropy ی سرور و یک کلید محاسبه‌شده با P_SHA-1 دارد که کلاینت از آن کلیدِ امضای فراخوانی‌هایش را می‌سازد؛
+- Subject confirmation ی Assertion همان کلید را، رمزشده با گواهی Relying Party، حمل می‌کند تا Relying Party بتواند آن را بازیابی کند.
+
+برای این کار گواهی Relying Party باید روی Client باشد: فیلد **Encryption certificate** در «صفحه‌های کنسول مدیریت»، صفحه‌ی WS-Federation clients (`saml.encryption.certificate`). لازم نیست *Encrypt assertions* روشن باشد. Dynamics 365 این گواهی را در Metadata ی خودش منتشر می‌کند:
+
+```bash
+curl -s https://crm.example.com/FederationMetadata/2007-06/FederationMetadata.xml \
+  | grep -o '<KeyDescriptor use="encryption">.*</KeyDescriptor>' | grep -o '<X509Certificate>[^<]*' | cut -d'>' -f2
+```
+
+بدون آن، درخواست کلید متقارن با پیام *This relying party has no encryption certificate, so a proof key cannot be issued for it.* رد می‌شود. درخواست بدون `KeyType` یا با Bearer همچنان توکن bearer می‌گیرد.
+
 خطاها به شکل SOAP Fault برمی‌گردند و عمداً کلی هستند: فراخوان می‌فهمد درخواست رد شده، نه اینکه کاربر وجود دارد یا کدام Relying Party ثبت شده است. محافظت Brute Force خود realm روی این Endpoint اعمال می‌شود و هر تلاش به‌عنوان یک Login Event ثبت می‌گردد.
 
 کلاینتی که به‌جای دریافت مستقیم آدرس، سرویس را کشف می‌کند، WSDL را از Endpoint ی Metadata Exchange می‌خواند که با همان Attribute در دسترس قرار می‌گیرد:
@@ -1735,6 +1779,9 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | همه‌ی لاگین‌های LDAP با `Duplicate key upn` (یا Attribute دیگری) شکست می‌خورند | دو LDAP mapper یک User attribute را پر می‌کنند؛ یکی را حذف کنید، یا `configure-ad-claims.sh` نسخه‌ی 26.7.0-5 را اجرا کنید که نسخه‌ی تکراری خودش را حذف می‌کند |
 | مرحله‌ی *Capability config* در *Create client* برای `wsfed` خالی است | عادی است؛ کنسول این مرحله را فقط برای OpenID Connect می‌سازد. **Next** بزنید و گزینه‌ها را در «صفحه‌های کنسول مدیریت» تنظیم کنید |
 | کنسول بعد از تعویض افزونه خطای `Cannot read properties of undefined` (مثلاً `helpText` یا `id`) می‌دهد | مرورگر هنوز اطلاعات سرور قبلی را نگه داشته؛ کنسول را Reload کنید و دوباره وارد شوید |
+| SDK روی درخواست کامل WS-Trust خطای `The request could not be processed.` (در CRM: MSIS7069) می‌دهد | نسخه‌ای قبل از 26.7.0-6 که عناصر `Claims`، `SignWith`، `EncryptWith` و مشابه را رد می‌کرد؛ ارتقا دهید |
+| SDK: `This relying party has no encryption certificate...` | گواهی Relying Party را در صفحه‌ی WS-Federation clients بگذارید؛ بخش «کلید اثبات برای کلاینت‌های WCF» |
+| ذخیره‌ی Realm settings در کنسول WS-Trust (یا تنظیم دیگری از realm) را دوباره خاموش می‌کند | کنسول همان تنظیماتی را که هنگام باز شدن بارگذاری کرده برمی‌گرداند. بعد از تغییر صفحه‌ی WS-Federation realm کنسول را Reload کنید |
 | هیچ کاربر LDAP نمی‌تواند وارد شود و لاگ `Can't find mapper type with ID: wsfed-ad-primary-sid-mapper` دارد | سرور در حال اجرا افزونه (یا نسخه‌ی جدید آن) را ندارد ولی Mapper مربوط به SID وجود دارد؛ Mapper را حذف یا JAR را مستقر کنید (بخش Rollback) |
 | توکن صادر می‌شود ولی هیچ Claim ندارد | **Unmanaged Attributes** در realm خاموش است |
 | خطای `ID4037` در Relying Party | امضا `KeyName` دارد؛ Key name transformer را روی همان Client برابر `NONE` بگذارید |

@@ -1,6 +1,8 @@
 package io.github.chosomeister.keycloak.protocol.wsfed;
 
-import io.github.chosomeister.keycloak.common.wsfed.parsers.WSTrustParser;
+import io.github.chosomeister.keycloak.protocol.wsfed.builders.ProofKey;
+import org.keycloak.common.util.PemUtils;
+import java.security.cert.X509Certificate;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.RequestSecurityTokenResponseBuilder;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.WSFedSAML2AssertionTypeBuilder;
 import io.github.chosomeister.keycloak.protocol.wsfed.builders.WsFedSAML11AssertionTypeBuilder;
@@ -29,7 +31,6 @@ import org.keycloak.services.managers.ClientSessionCode;
 import org.keycloak.services.util.DefaultClientSessionContext;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.picketlink.identity.federation.core.wstrust.wrappers.RequestSecurityToken;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -40,7 +41,6 @@ import jakarta.ws.rs.core.UriInfo;
 
 import org.keycloak.services.resources.RealmsResource;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -198,40 +198,72 @@ public class WSTrustActiveService {
             throw new WSTrustFault(true, "The request carries no RequestSecurityToken.", Errors.INVALID_REQUEST);
         }
 
-        RequestSecurityToken request = parseRequest(rstElement);
-        ClientModel client = resolveClient(request);
+        WSTrustRequest request = WSTrustRequest.parse(rstElement);
+        ClientModel client = resolveClient(request.appliesTo());
+        KeyRequest key = keyRequest(request, client);
         UserModel user = authenticate(envelope, client);
 
-        return issueFor(client, user, messageId(envelope));
+        return issueFor(client, user, messageId(envelope), key);
     }
 
-    private RequestSecurityToken parseRequest(Element rstElement) throws Exception {
-        String xml = WSTrustSoap.toXml(rstElement);
-        try (ByteArrayInputStream in = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
-            Object parsed = new WSTrustParser().parse(in);
-            if (!(parsed instanceof RequestSecurityToken)) {
-                throw new WSTrustFault(true, "Unsupported request.", Errors.INVALID_REQUEST);
-            }
-            return (RequestSecurityToken) parsed;
+    /** The proof key the response will carry, or none for a bearer token. */
+    private record KeyRequest(byte[] clientEntropy, int keySizeBits, X509Certificate relyingPartyCertificate) {
+    }
+
+    static final int DEFAULT_KEY_SIZE = 256;
+
+    /**
+     * Decides, before the password is checked, whether the requested key can be issued, so a
+     * request that cannot succeed is refused without counting as a failed sign-in.
+     */
+    private KeyRequest keyRequest(WSTrustRequest request, ClientModel client) {
+        String keyType = request.keyType();
+        if (keyType == null || WSTrustRequest.BEARER.equals(keyType)) {
+            return null;
+        }
+        if (!request.wantsSymmetricKey()) {
+            throw new WSTrustFault(true, "Only bearer and symmetric proof keys are supported.", Errors.INVALID_REQUEST);
+        }
+        if (request.computedKeyAlgorithm() != null && !WSTrustRequest.PSHA1.equals(request.computedKeyAlgorithm())) {
+            throw new WSTrustFault(true, "Only the P_SHA-1 computed key algorithm is supported.", Errors.INVALID_REQUEST);
+        }
+        int keySize = request.keySize() == 0 ? DEFAULT_KEY_SIZE : request.keySize();
+        if (keySize < 128 || keySize > 512 || keySize % 8 != 0) {
+            throw new WSTrustFault(true, "Unsupported key size.", Errors.INVALID_REQUEST);
+        }
+        if (request.clientEntropy() != null && request.clientEntropy().length == 0) {
+            throw new WSTrustFault(true, "The requestor entropy is not valid.", Errors.INVALID_REQUEST);
+        }
+        X509Certificate certificate = relyingPartyCertificate(client);
+        if (certificate == null) {
+            // The relying party can only use the token if it can recover the key, and it recovers it
+            // with its own certificate.
+            throw new WSTrustFault(false, "This relying party has no encryption certificate, so a proof key cannot be issued for it.",
+                    Errors.INVALID_CLIENT);
+        }
+        return new KeyRequest(request.clientEntropy(), keySize, certificate);
+    }
+
+    static X509Certificate relyingPartyCertificate(ClientModel client) {
+        String pem = client.getAttribute(ENCRYPTION_CERTIFICATE_ATTRIBUTE);
+        if (pem == null || pem.isBlank()) {
+            return null;
+        }
+        try {
+            return PemUtils.decodeCertificate(pem.replaceAll("-----(BEGIN|END) CERTIFICATE-----", "").replaceAll("\\s", ""));
+        } catch (RuntimeException e) {
+            logger.warnf("Client %s has an encryption certificate that cannot be read: %s", client.getClientId(), e.getMessage());
+            return null;
         }
     }
+
+    static final String ENCRYPTION_CERTIFICATE_ATTRIBUTE = "saml.encryption.certificate";
 
     /**
      * The relying party names itself through AppliesTo, exactly as wtrealm does in the browser
      * flow, and the same checks apply to the client that names it.
      */
-    private ClientModel resolveClient(RequestSecurityToken request) {
-        String appliesTo = null;
-        if (request.getAppliesTo() != null && request.getAppliesTo().getAny() != null) {
-            for (Object any : request.getAppliesTo().getAny()) {
-                if (any instanceof org.picketlink.identity.federation.ws.addressing.EndpointReferenceType ref
-                        && ref.getAddress() != null) {
-                    appliesTo = ref.getAddress().getValue();
-                    break;
-                }
-            }
-        }
-
+    private ClientModel resolveClient(String appliesTo) {
         if (appliesTo == null || appliesTo.isEmpty()) {
             throw new WSTrustFault(true, "The request does not say which relying party it is for.",
                     Errors.INVALID_REQUEST);
@@ -366,7 +398,7 @@ public class WSTrustActiveService {
      * run exactly as they do in the browser flow; it is never persisted, because there is no
      * browser session here to keep alive.
      */
-    private Response issueFor(ClientModel client, UserModel user, String messageId) throws Exception {
+    private Response issueFor(ClientModel client, UserModel user, String messageId, KeyRequest key) throws Exception {
         UserSessionModel userSession = session.sessions().createUserSession(
                 UUID.randomUUID().toString(), realm, user, user.getUsername(),
                 connection().getRemoteAddr(), AUTH_METHOD, false, null, null,
@@ -386,6 +418,10 @@ public class WSTrustActiveService {
                 .setTokenExpiration(io.github.chosomeister.keycloak.protocol.wsfed.builders.WsFedSAMLAssertionTypeAbstractBuilder.tokenLifespan(realm, client, userSession));
 
         WSFedLoginProtocol.configureTokenSecurity(session, realm, client, builder);
+        builder.setRequestType(WSTrustRequest.TRUST_NS + "/Issue");
+        if (key != null) {
+            builder.setProofKey(ProofKey.issue(key.clientEntropy(), key.keySizeBits(), key.relyingPartyCertificate()));
+        }
 
         ClientSessionCode<AuthenticatedClientSessionModel> accessCode =
                 new ClientSessionCode<>(session, realm, clientSession);

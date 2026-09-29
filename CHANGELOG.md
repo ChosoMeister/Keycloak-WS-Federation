@@ -3,8 +3,26 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
-## Unreleased
+## 26.7.0-6
 
+- **The active WS-Trust endpoint accepts a real WCF request.** The request parser refused any
+  element it did not know, and the Dynamics 365 SDK sends every element of the relying party's
+  policy template (`Claims`, `SignWith`, `EncryptWith`, `CanonicalizationAlgorithm`,
+  `EncryptionAlgorithm`, `KeyWrapAlgorithm`), so every SDK request failed with
+  *The request could not be processed.* The request is now read for the parts the endpoint acts on
+  and the rest is ignored.
+- **Symmetric proof keys (holder-of-key).** A request with `KeyType` SymmetricKey receives server
+  entropy and a P_SHA-1 computed key, or the key itself when the client sent no entropy, and the
+  assertion's subject confirmation carries the same key encrypted with the relying party's
+  certificate, as AD FS issues it. This is what the Dynamics 365 SDK needs. It uses the client's
+  encryption certificate; without one the request is refused with a clear message. Bearer requests
+  are unchanged.
+- The response to the active endpoint echoes the WS-Trust 1.3 `RequestType` and carries a
+  `RequestedAttachedReference`; SAML 1.1 tokens also carry both references.
+- **A SAML 1.1 assertion no longer contains an empty `AttributeStatement`** when none of the user's
+  mapped attributes is set. SAML 1.1 forbids it and WIF refused such a token.
+- Verified with Microsoft's own libraries (`WsTrustSerializer`, `Psha1KeyGenerator`,
+  `Saml2SecurityTokenHandler`/`SamlSecurityTokenHandler`) against the requests captured from the SDK.
 - README: the Dynamics 365 SDK service account must be a directory account that is a CRM user,
   not a Keycloak-only user, which has no SID and is rejected by CRM.
 

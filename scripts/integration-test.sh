@@ -99,6 +99,22 @@ grep -q 'RelatesTo' <<<"${issued}"
 soap "${SOAP12}" "${test_user}" wrong-password | grep -q 'Authentication failed.'
 soap 'http://schemas.xmlsoap.org/soap/envelope/' "${test_user}" "${test_password}" | grep -q 'Only SOAP 1.2'
 
+# A WCF client such as the Dynamics 365 SDK asks for a symmetric proof key and sends every element
+# of the relying party's policy template. The token must be holder-of-key, with the key the
+# requestor computes from the server entropy.
+rp_certificate=$(awk 'NR>1 && !/-----/' "${certificate_file}" | tr -d '\n')
+"${KCADM}" update "clients/${client_uuid}" -r "${REALM}" -s "attributes.\"saml.encryption.certificate\"=${rp_certificate}"
+hok_request() {
+  cat <<XML
+<s:Envelope xmlns:s="${SOAP12}" xmlns:a="http://www.w3.org/2005/08/addressing"><s:Header><o:Security xmlns:o="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><o:UsernameToken><o:Username>${test_user}</o:Username><o:Password>${test_password}</o:Password></o:UsernameToken></o:Security></s:Header><s:Body><trust:RequestSecurityToken xmlns:trust="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy"><a:EndpointReference><a:Address>${WSFED_CLIENT_ID}</a:Address></a:EndpointReference></wsp:AppliesTo><trust:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</trust:RequestType><trust:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/SymmetricKey</trust:KeyType><trust:KeySize>256</trust:KeySize><trust:KeyWrapAlgorithm>http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p</trust:KeyWrapAlgorithm><trust:EncryptWith>http://www.w3.org/2001/04/xmlenc#aes256-cbc</trust:EncryptWith><trust:SignWith>http://www.w3.org/2000/09/xmldsig#hmac-sha1</trust:SignWith><trust:CanonicalizationAlgorithm>http://www.w3.org/2001/10/xml-exc-c14n#</trust:CanonicalizationAlgorithm><trust:EncryptionAlgorithm>http://www.w3.org/2001/04/xmlenc#aes256-cbc</trust:EncryptionAlgorithm><trust:Claims Dialect="http://schemas.xmlsoap.org/ws/2005/05/identity"><wsid:ClaimType Uri="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" xmlns:wsid="http://schemas.xmlsoap.org/ws/2005/05/identity"/></trust:Claims><trust:Entropy><trust:BinarySecret Type="http://docs.oasis-open.org/ws-sx/ws-trust/200512/Nonce">c2FtcGxlLWNsaWVudC1lbnRyb3B5LTMyLWJ5dGVzLXRlc3Qh</trust:BinarySecret></trust:Entropy><trust:ComputedKeyAlgorithm>http://docs.oasis-open.org/ws-sx/ws-trust/200512/CK/PSHA1</trust:ComputedKeyAlgorithm></trust:RequestSecurityToken></s:Body></s:Envelope>
+XML
+}
+hok=$(hok_request | curl -sS -X POST -H 'Content-Type: application/soap+xml' --data-binary @- "${HTTP_URL}/realms/${REALM}/protocol/wsfed/usernamemixed")
+grep -q 'holder-of-key' <<<"${hok}"
+grep -q 'CK/PSHA1' <<<"${hok}"
+grep -q 'EncryptedKey' <<<"${hok}"
+grep -q 'RequestedAttachedReference' <<<"${hok}"
+
 "${KCADM}" update "clients/${client_uuid}" -r "${REALM}" -s directAccessGrantsEnabled=false
 soap "${SOAP12}" "${test_user}" "${test_password}" | grep -q 'does not accept password sign-in'
 
