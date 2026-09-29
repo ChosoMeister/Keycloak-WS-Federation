@@ -135,6 +135,12 @@ public class WsFedSAML11AssertionTypeBuilder extends WsFedSAMLAssertionTypeAbstr
         transformAttributeStatement(attributeStatementMappers, assertion, session, userSession, clientSession);
         populateRoles(roleListMapper, assertion, session, userSession, clientSession);
 
+        // SAML 1.1 requires at least one Attribute in an AttributeStatement, and WIF refuses the
+        // whole token otherwise. A user none of whose mapped attributes is set leaves it empty.
+        new java.util.ArrayList<>(assertion.getStatements()).stream()
+                .filter(st -> st instanceof SAML11AttributeStatementType a && a.get().isEmpty())
+                .forEach(assertion::remove);
+
         return assertion;
     }
 

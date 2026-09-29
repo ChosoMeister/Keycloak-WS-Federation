@@ -99,6 +99,26 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
     protected String encryptionAlgorithm = "AES";
     protected boolean encrypt;
 
+    /** Set for a holder-of-key token; null issues a bearer token, as the browser flow does. */
+    protected ProofKey proofKey;
+
+    /**
+     * The RequestType echoed in the response. The passive profile has always sent the 2005/02
+     * value and relying parties accept it; the active endpoint answers a WS-Trust 1.3 request and
+     * echoes the 1.3 value.
+     */
+    protected String requestType = "http://schemas.xmlsoap.org/ws/2005/02/trust/Issue";
+
+    public RequestSecurityTokenResponseBuilder setProofKey(ProofKey proofKey) {
+        this.proofKey = proofKey;
+        return this;
+    }
+
+    public RequestSecurityTokenResponseBuilder setRequestType(String requestType) {
+        this.requestType = requestType;
+        return this;
+    }
+
     public RequestSecurityTokenResponseBuilder() {
         setMethod(HttpMethod.POST);
     }
@@ -264,12 +284,15 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
         response.getAppliesTo().addAny(ert);
         response.setRequestedSecurityToken(new RequestedSecurityTokenType());
 
-        response.setRequestType(URI.create("http://schemas.xmlsoap.org/ws/2005/02/trust/Issue"));
+        response.setRequestType(URI.create(requestType));
 
         if(samlToken != null) {
             //Sign token
-            Document doc = AssertionUtil.asDocument(samlToken);
-            doc = signAssertion(doc, new SAML2SignatureProxy());
+            Document unsigned = AssertionUtil.asDocument(samlToken);
+            if (proofKey != null) {
+                confirm(() -> proofKey.confirmSaml2(unsigned));
+            }
+            Document doc = signAssertion(unsigned, new SAML2SignatureProxy());
             if(encrypt){
                 doc=encryptDocument(doc);
             }
@@ -283,6 +306,8 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
             ki.setValue(samlToken.getID());
             ki.setValueType("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID");
             response.getRequestedUnattachedReference().getSecurityTokenReference().addAny(ki);
+            response.setRequestedAttachedReference(reference(samlToken.getID(),
+                    "http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID"));
 
             response.setTokenType(URI.create("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0"));
         }
@@ -298,21 +323,56 @@ public class RequestSecurityTokenResponseBuilder extends WSFedResponseBuilder {
         }
         else if (saml11Token != null) {
             //Sign token
-            Document doc = io.github.chosomeister.keycloak.saml.processing.core.saml.v2.util.AssertionUtil.asDocument(saml11Token);
-            doc = signAssertion(doc, new SAML11Signature());
+            Document unsigned = io.github.chosomeister.keycloak.saml.processing.core.saml.v2.util.AssertionUtil.asDocument(saml11Token);
+            if (proofKey != null) {
+                confirm(() -> proofKey.confirmSaml11(unsigned));
+            }
+            Document doc = signAssertion(unsigned, new SAML11Signature());
             if(encrypt){
                 //SAML 1.1 defines no encrypted assertion. Encrypting produced an element no relying
                 //party can read, so say what is wrong instead of issuing it.
                 throw new ConfigurationException("SAML 1.1 has no encrypted assertion. Use SAML 2.0 or turn off encryption for this client.");
             }
             response.getRequestedSecurityToken().add(doc.getDocumentElement());
+            // A client refers to the token by these when it signs with the proof key.
+            String assertionId = saml11Token.getID();
+            response.setRequestedAttachedReference(reference(assertionId,
+                    "http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.0#SAMLAssertionID"));
+            response.setRequestedUnattachedReference(reference(assertionId,
+                    "http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.0#SAMLAssertionID"));
             response.setTokenType(URI.create(SAML11Constants.ASSERTION_11_NSURI));
         }
         else {
             throw new ConfigurationException("SAML or JWT must be set.");
         }
 
+        if (proofKey != null) {
+            proofKey.applyTo(response);
+        }
+
         return response;
+    }
+
+    private static RequestedReferenceType reference(String tokenId, String valueType) {
+        RequestedReferenceType reference = new RequestedReferenceType();
+        reference.setSecurityTokenReference(new SecurityTokenReferenceType());
+        KeyIdentifierType identifier = new KeyIdentifierType();
+        identifier.setValue(tokenId);
+        identifier.setValueType(valueType);
+        reference.getSecurityTokenReference().addAny(identifier);
+        return reference;
+    }
+
+    private interface Confirmation {
+        void run() throws java.security.GeneralSecurityException;
+    }
+
+    private static void confirm(Confirmation confirmation) throws ProcessingException {
+        try {
+            confirmation.run();
+        } catch (java.security.GeneralSecurityException e) {
+            throw new ProcessingException("Could not encrypt the proof key for the relying party", e);
+        }
     }
 
     protected Document signAssertion(Document samlDocument, SAMLAbstractSignature signature) throws ProcessingException {

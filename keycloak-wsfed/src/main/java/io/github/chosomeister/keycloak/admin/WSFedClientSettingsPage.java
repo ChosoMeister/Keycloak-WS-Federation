@@ -76,7 +76,9 @@ public class WSFedClientSettingsPage implements UiPageProvider, UiPageProviderFa
                     "Encrypts the SAML 2.0 assertion with the certificate below. SAML 1.1 cannot be encrypted.",
                     "saml.encrypt"),
             attribute("encryptionCertificate", "Encryption certificate",
-                    "The relying party's public certificate, as PEM or its Base64 body.",
+                    "The relying party's public certificate, as PEM or its Base64 body. Needed for the Dynamics 365"
+                            + " SDK: the proof key its token carries is encrypted with it. Dynamics 365 publishes it in its"
+                            + " federation metadata as the encryption key.",
                     ProviderConfigProperty.TEXT_TYPE, null, null,
                     c -> c.getAttribute("saml.encryption.certificate"),
                     (c, v) -> c.setAttribute("saml.encryption.certificate", v)),
