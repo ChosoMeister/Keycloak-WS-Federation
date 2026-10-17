@@ -3,7 +3,7 @@
 This project uses the Keycloak version it targets as its own version, followed by a build number:
 `26.7.0-1` is the first build for Keycloak `26.7.x`.
 
-## Unreleased
+## 26.7.0-7
 
 - **The `mex` WSDL publishes the username under `SignedEncryptedSupportingTokens`**, as AD FS does.
   It was published under `SignedSupportingTokens`, which Microsoft's WS-Trust clients do not
