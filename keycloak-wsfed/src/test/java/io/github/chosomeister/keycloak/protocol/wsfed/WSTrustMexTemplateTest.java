@@ -78,6 +78,17 @@ class WSTrustMexTemplateTest {
     }
 
     @Test
+    void theUsernameTokenIsASignedEncryptedSupportingToken() {
+        // AD FS publishes the username under SignedEncryptedSupportingTokens, and Microsoft's clients
+        // (the Dynamics 365 SDK, ADAL) look for exactly that to find the username endpoint. Under
+        // plain SignedSupportingTokens they report "Unable to find username token endpoint".
+        Element supporting = (Element) wsdl.getElementsByTagNameNS(SECURITY_POLICY_NS, "SignedEncryptedSupportingTokens").item(0);
+        assertNotNull(supporting);
+        assertEquals(1, supporting.getElementsByTagNameNS(SECURITY_POLICY_NS, "UsernameToken").getLength());
+        assertEquals(0, wsdl.getElementsByTagNameNS(SECURITY_POLICY_NS, "SignedSupportingTokens").getLength());
+    }
+
+    @Test
     void thePolicyIsReferencedByTheBinding() {
         Element policy = (Element) wsdl.getElementsByTagNameNS(POLICY_NS, "Policy").item(0);
         String id = policy.getAttributeNS(
