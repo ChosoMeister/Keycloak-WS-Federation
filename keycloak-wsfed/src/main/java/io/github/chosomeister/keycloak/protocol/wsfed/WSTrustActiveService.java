@@ -74,6 +74,17 @@ public class WSTrustActiveService {
      */
     public static final String ALLOW_PASSWORD_ONLY_ATTRIBUTE = "wsfed.ws-trust.allow-password-only";
 
+    /**
+     * Realm attribute choosing the policy assertion that carries the username in the WSDL served at
+     * /mex. {@code signed-encrypted}, the default, is what AD FS publishes and what Microsoft's
+     * clients (the Dynamics 365 SDK, ADAL) look for to find the username endpoint. {@code signed}
+     * publishes plain SignedSupportingTokens for a client that expects that form. The transport is
+     * HTTPS either way, so the choice changes only how the policy reads, not what is sent.
+     */
+    public static final String MEX_SUPPORTING_TOKENS_ATTRIBUTE = "wsfed.ws-trust.mex.supporting-tokens";
+    public static final String SUPPORTING_TOKENS_SIGNED_ENCRYPTED = "signed-encrypted";
+    public static final String SUPPORTING_TOKENS_SIGNED = "signed";
+
     private static final String AUTH_METHOD = "wsfed-ws-trust";
     private static final String GENERIC_AUTH_FAILURE = "Authentication failed.";
 
@@ -135,7 +146,31 @@ public class WSTrustActiveService {
                 throw new IOException("wsfed-ws-trust-mex-template.xml is missing from the provider");
             }
             return new String(template.readAllBytes(), StandardCharsets.UTF_8)
-                    .replace("${wstrust.usernamemixed}", endpointAddress());
+                    .replace("${wstrust.usernamemixed}", endpointAddress())
+                    .replace("${wstrust.supporting-tokens}",
+                            supportingTokensElement(realm.getName(), realm.getAttribute(MEX_SUPPORTING_TOKENS_ATTRIBUTE)));
+        }
+    }
+
+    /**
+     * The WS-SecurityPolicy element the username is published under. Unset or blank is the AD FS
+     * form; a value that is neither form keeps the AD FS form and says so, rather than breaking
+     * discovery over a typing mistake.
+     */
+    static String supportingTokensElement(String realmName, String configured) {
+        if (configured == null || configured.isBlank()) {
+            return "SignedEncryptedSupportingTokens";
+        }
+        switch (configured.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case SUPPORTING_TOKENS_SIGNED_ENCRYPTED:
+                return "SignedEncryptedSupportingTokens";
+            case SUPPORTING_TOKENS_SIGNED:
+                return "SignedSupportingTokens";
+            default:
+                logger.warnf("Realm %s sets %s to '%s'; only '%s' and '%s' are valid, so '%s' is used.",
+                        realmName, MEX_SUPPORTING_TOKENS_ATTRIBUTE, configured,
+                        SUPPORTING_TOKENS_SIGNED_ENCRYPTED, SUPPORTING_TOKENS_SIGNED, SUPPORTING_TOKENS_SIGNED_ENCRYPTED);
+                return "SignedEncryptedSupportingTokens";
         }
     }
 

@@ -47,6 +47,14 @@ public class WSFedRealmSettingsPage implements UiPageProvider, UiPageProviderFac
                     "Lets an account that has OTP sign in to the active endpoint with its password alone,"
                             + " bypassing the second factor there. Prefer a service account without OTP.",
                     WSTrustActiveService.ALLOW_PASSWORD_ONLY_ATTRIBUTE),
+            attribute("mexSupportingTokens", "Username policy in /mex",
+                    "How the WSDL at /mex describes the username. signed-encrypted is what AD FS publishes"
+                            + " and what the Dynamics 365 SDK looks for; keep it unless a client needs signed.",
+                    ProviderConfigProperty.LIST_TYPE,
+                    List.of(WSTrustActiveService.SUPPORTING_TOKENS_SIGNED_ENCRYPTED, WSTrustActiveService.SUPPORTING_TOKENS_SIGNED),
+                    WSTrustActiveService.SUPPORTING_TOKENS_SIGNED_ENCRYPTED,
+                    realm -> realm.getAttribute(WSTrustActiveService.MEX_SUPPORTING_TOKENS_ATTRIBUTE),
+                    (realm, value) -> realm.setAttribute(WSTrustActiveService.MEX_SUPPORTING_TOKENS_ATTRIBUTE, value)),
             realmFlag("announceWsTrust", "Announce WS-Trust in metadata",
                     "Lists the WS-Trust namespaces in the metadata without serving the active endpoint."
                             + " Not needed when the active endpoint is on.",

@@ -33,7 +33,7 @@
 						</sp:Layout>
 					</wsp:Policy>
 				</sp:TransportBinding>
-				<sp:SignedEncryptedSupportingTokens>
+				<sp:${wstrust.supporting-tokens}>
 					<wsp:Policy>
 						<sp:UsernameToken sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/AlwaysToRecipient">
 							<wsp:Policy>
@@ -41,7 +41,7 @@
 							</wsp:Policy>
 						</sp:UsernameToken>
 					</wsp:Policy>
-				</sp:SignedEncryptedSupportingTokens>
+				</sp:${wstrust.supporting-tokens}>
 				<sp:Wss11/>
 				<sp:Trust13/>
 			</wsp:All>

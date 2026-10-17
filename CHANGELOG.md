@@ -9,6 +9,9 @@ This project uses the Keycloak version it targets as its own version, followed b
   It was published under `SignedSupportingTokens`, which Microsoft's WS-Trust clients do not
   recognise: the Dynamics 365 SDK failed with "Unable to find username token endpoint". The
   transport is HTTPS either way, so what is sent on the wire does not change.
+- **The realm attribute `wsfed.ws-trust.mex.supporting-tokens` chooses that form**:
+  `signed-encrypted` (default, AD FS) or `signed`. It is also on the WS-Federation realm page in the
+  admin console. Any other value keeps the default and logs a warning.
 
 ## 26.7.0-6
 

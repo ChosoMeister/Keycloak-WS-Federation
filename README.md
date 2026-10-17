@@ -387,6 +387,7 @@ change and **Save**.
 |---|---|---|
 | Active WS-Trust endpoint | `wsfed.ws-trust.enabled` | Serves `/usernamemixed` and `/mex` for the SDK |
 | Accept OTP accounts with a password only | `wsfed.ws-trust.allow-password-only` | Leave off; use a service account without OTP instead |
+| Username policy in /mex | `wsfed.ws-trust.mex.supporting-tokens` | `signed-encrypted` (AD FS form); `signed` only for a client that needs it |
 | Announce WS-Trust in metadata | `wsfed.metadata.announce-ws-trust` | Only for a relying party that needs the namespaces without the endpoint |
 | Claim types in metadata | `wsfed.metadata.claim-types` | Empty means UPN, primary SID and Name |
 
@@ -629,6 +630,18 @@ GET /realms/{realm}/protocol/wsfed/mex
 
 It describes the SOAP 1.2 binding, the issue operation, and a policy asking for a `UsernameToken`
 over transport security, with the address of the active endpoint as the caller reached the realm.
+
+The username is published under `SignedEncryptedSupportingTokens`, as AD FS does. The Dynamics 365
+SDK and other Microsoft WS-Trust clients look for exactly that, and report *Unable to find username
+token endpoint* without it. A client that expects plain `SignedSupportingTokens` can be served that
+form instead; the transport is HTTPS either way, so nothing sent on the wire changes:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.mex.supporting-tokens"=signed'
+```
+
+`signed-encrypted` (or leaving it unset) restores the default. Any other value keeps the default and
+is logged as a warning.
 
 Turning the profile on also makes the federation metadata announce the WS-Trust namespaces, since
 at that point the claim is true. `wsfed.metadata.announce-ws-trust` remains for a relying party
@@ -928,6 +941,7 @@ The Broker accepts a PEM certificate or its Base64 certificate body. Supply the 
 | `invalid redirect uri` on sign-out | `wreply` is not among the client's valid post logout redirect URIs |
 | `/mex` returns 404 | `wsfed.ws-trust.enabled` is not set on the realm |
 | SOAP fault `This relying party does not accept password sign-in.` | Direct access grants is off on the client |
+| SDK: `Unable to find username token endpoint` | `/mex` publishes `SignedSupportingTokens`; set `wsfed.ws-trust.mex.supporting-tokens` back to `signed-encrypted` |
 | SOAP fault `A second factor is required for this account...` | The account has OTP; use a service account without it, or set `wsfed.ws-trust.allow-password-only` |
 | SOAP fault `Account is not fully set up.` | The account has a pending required action; sign in once through the browser |
 | SOAP fault `Only SOAP 1.2 envelopes are supported.` | The caller sent SOAP 1.1 |
@@ -1377,6 +1391,7 @@ https://keycloak.example.com/admin/master/console/#/production/page-section/WS-F
 |---|---|---|
 | Active WS-Trust endpoint | `wsfed.ws-trust.enabled` | سرو کردن `/usernamemixed` و `/mex` برای SDK |
 | Accept OTP accounts with a password only | `wsfed.ws-trust.allow-password-only` | خاموش بماند؛ به‌جایش حساب سرویس بدون OTP بسازید |
+| Username policy in /mex | `wsfed.ws-trust.mex.supporting-tokens` | `signed-encrypted` (شکل AD FS)؛ `signed` فقط برای کلاینتی که لازمش دارد |
 | Announce WS-Trust in metadata | `wsfed.metadata.announce-ws-trust` | فقط برای Relying Party ای که Namespace ها را بدون Endpoint لازم دارد |
 | Claim types in metadata | `wsfed.metadata.claim-types` | خالی یعنی UPN، Primary SID و Name |
 
@@ -1571,6 +1586,14 @@ GET /realms/{realm}/protocol/wsfed/mex
 ```
 
 این سند، Binding از نوع SOAP 1.2، عملیات Issue، و یک Policy که `UsernameToken` روی امنیت لایه انتقال می‌خواهد را توصیف می‌کند، به‌همراه آدرس Endpoint ی فعال همان‌طور که فراخوان به realm رسیده است.
+
+نام کاربری زیر `SignedEncryptedSupportingTokens` اعلام می‌شود، همان‌طور که AD FS اعلام می‌کند. SDK دی۳۶۵ و دیگر کلاینت‌های WS-Trust مایکروسافت دقیقاً دنبال همین می‌گردند و بدون آن خطای *Unable to find username token endpoint* می‌دهند. برای کلاینتی که شکل ساده‌ی `SignedSupportingTokens` را انتظار دارد می‌توان همان را اعلام کرد؛ ارتباط در هر دو حالت HTTPS است و آنچه روی شبکه فرستاده می‌شود تغییری نمی‌کند:
+
+```bash
+kcadm.sh update realms/<realm> -s 'attributes."wsfed.ws-trust.mex.supporting-tokens"=signed'
+```
+
+مقدار `signed-encrypted` (یا خالی گذاشتن آن) پیش‌فرض را برمی‌گرداند. هر مقدار دیگری پیش‌فرض را نگه می‌دارد و در لاگ هشدار ثبت می‌شود.
 
 روشن کردن این پروفایل باعث می‌شود Federation Metadata هم Namespace های WS-Trust را اعلام کند، چون از آن لحظه این ادعا درست است. `wsfed.metadata.announce-ws-trust` برای Relying Party ای باقی می‌ماند که به حضور این Namespace ها نیاز دارد بدون آنکه Endpoint ی فعال سرو شود.
 
@@ -1792,6 +1815,7 @@ Broker یک certificate به‌شکل PEM یا بدنه Base64 آن را می‌
 | `invalid redirect uri` هنگام خروج | `wreply` در Valid post logout redirect URIs کلاینت نیست |
 | `/mex` پاسخ 404 می‌دهد | `wsfed.ws-trust.enabled` روی realm ست نشده |
 | SOAP Fault با متن `This relying party does not accept password sign-in.` | Direct access grants روی Client خاموش است |
+| SDK: خطای `Unable to find username token endpoint` | `/mex` شکل `SignedSupportingTokens` را اعلام می‌کند؛ `wsfed.ws-trust.mex.supporting-tokens` را به `signed-encrypted` برگردانید |
 | SOAP Fault با متن `A second factor is required for this account...` | حساب OTP دارد؛ از حساب سرویس بدون OTP استفاده کنید یا `wsfed.ws-trust.allow-password-only` را ست کنید |
 | SOAP Fault با متن `Account is not fully set up.` | Required Action روی حساب مانده؛ یک بار با مرورگر وارد شوید |
 | SOAP Fault با متن `Only SOAP 1.2 envelopes are supported.` | فراخوان SOAP 1.1 فرستاده |
