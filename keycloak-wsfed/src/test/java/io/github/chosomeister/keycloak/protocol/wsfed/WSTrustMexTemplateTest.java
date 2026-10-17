@@ -33,19 +33,43 @@ class WSTrustMexTemplateTest {
 
     @BeforeAll
     static void render() throws Exception {
+        wsdl = render(null);
+    }
+
+    /** Renders the template the way the endpoint does, for a realm with the given setting. */
+    private static Document render(String supportingTokens) throws Exception {
         InputStream stream = WSTrustMexTemplateTest.class.getClassLoader()
                 .getResourceAsStream("wsfed-ws-trust-mex-template.xml");
         assertNotNull(stream, "the WS-Trust metadata template is missing from the build");
 
         raw = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
-                .replace("${wstrust.usernamemixed}", ENDPOINT);
+                .replace("${wstrust.usernamemixed}", ENDPOINT)
+                .replace("${wstrust.supporting-tokens}",
+                        WSTrustActiveService.supportingTokensElement("Nova", supportingTokens));
 
         assertFalse(raw.contains("${"), "a placeholder was left unsubstituted");
 
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
-        wsdl = factory.newDocumentBuilder()
+        return factory.newDocumentBuilder()
                 .parse(new ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String usernamePolicy(Document document) {
+        Element token = (Element) document.getElementsByTagNameNS(SECURITY_POLICY_NS, "UsernameToken").item(0);
+        Element wrapper = (Element) token.getParentNode().getParentNode();
+        return wrapper.getLocalName();
+    }
+
+    @Test
+    void aRealmCanChooseHowTheUsernamePolicyReads() throws Exception {
+        assertEquals("SignedEncryptedSupportingTokens", usernamePolicy(render(null)));
+        assertEquals("SignedEncryptedSupportingTokens", usernamePolicy(render("")));
+        assertEquals("SignedEncryptedSupportingTokens", usernamePolicy(render("signed-encrypted")));
+        assertEquals("SignedSupportingTokens", usernamePolicy(render("signed")));
+        assertEquals("SignedSupportingTokens", usernamePolicy(render(" Signed ")));
+        // A typing mistake keeps the form Microsoft's clients find rather than breaking discovery.
+        assertEquals("SignedEncryptedSupportingTokens", usernamePolicy(render("encrypted")));
     }
 
     @Test
